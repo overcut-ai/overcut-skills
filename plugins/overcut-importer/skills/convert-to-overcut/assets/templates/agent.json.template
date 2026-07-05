@@ -1,0 +1,12 @@
+{
+  "name": "<kebab-case-name>",
+  "description": "<one line shown in the Overcut UI>",
+  "baseAgentType": "Custom",
+  "modelKey": "<workspace-default>",
+  "additionalInstructions": "<the distilled system prompt: role, goal, behavior, and how it judges quality - framework-free>",
+  "color": "#4F46E5",
+  "availableTools": [],
+  "skills": [],
+  "mcpServers": [],
+  "secrets": []
+}

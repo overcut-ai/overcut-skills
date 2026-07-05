@@ -13,6 +13,11 @@
       "name": "overcut",
       "source": "./plugins/overcut",
       "description": "Work with Overcut from Claude Code: connect to the Overcut GraphQL API to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, and more."
+    },
+    {
+      "name": "overcut-importer",
+      "source": "./plugins/overcut-importer",
+      "description": "Convert existing agent/automation frameworks (Argo, kagents, LangGraph, CrewAI, AutoGen, n8n, GitHub Actions, or arbitrary skill/prompt folders) into Overcut-ready Skills, Agents, and Workflow definitions that import cleanly into a project."
     }
   ]
 }
