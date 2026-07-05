@@ -1,0 +1,43 @@
+# Conversion manifest
+
+## 1. Summary
+
+Detected source framework(s): `<...>`.
+Produced: **N skills, M agents, K workflows**.
+Headline open items: `<the 1-3 things the user most needs to do>`.
+
+## 2. Source → target mapping
+
+| Source (file · construct) | Overcut artifact | Notes |
+|---|---|---|
+| `<file>` · `<construct>` | `<skill/agent/workflow · name>` | `<e.g. baseAgentType inferred>` |
+
+## 3. Dropped as plumbing
+
+_Everything intentionally not carried over, with why. State it even if empty._
+
+- `<construct>` — `<reason, e.g. k8s container spec / retry strategy / build step>`
+
+## 4. TODOs
+
+### Placeholders to fill
+- [ ] `<agent/workflow>`: set `modelKey`/`defaultModelKey` (currently `<workspace-default>`).
+- [ ] `<agent>`: confirm `baseAgentType` (inferred/defaulted).
+- [ ] `<workflow>`: define the real trigger (currently manual placeholder).
+
+### Integrations to wire
+- [ ] agent `<name>` calls `<tool>` → assign MCP `<catalogKey>` (allowedTools: `<...>`) + secret `<NAME>`. Confidence: `<high|low>`.
+
+### Secrets to create (by name, never value)
+- [ ] `<SECRET_NAME>` — for `<tool/agent>`. _(If a credential was hardcoded in the source: create it here and rotate the leaked value.)_
+
+### Trigger conditions to narrow
+- [ ] `<workflow>`: finish trigger `conditions` in the UI (repo/label/path/author).
+
+## 5. Import steps (optional — via the `overcut-api` skill)
+
+1. Commit `skills/` into a repo connected to the target project → `createSkill` / `createSkills` for each (`path` + `ref`).
+2. `createAgent` for each `agents/*.agent.json`, then `assignSkillsToAgent`, `assignMcpServersToAgent`, `setAgentSecrets`.
+3. `createWorkflow` (or `importWorkflow` with `agentMapping` from `agentRefs`) for each `workflows/*.workflow.json`. This edits the **draft** — review in the UI, then `commitWorkflow` to go live.
+
+Do not create secret values, `commitWorkflow`, or trigger runs without explicit confirmation.
