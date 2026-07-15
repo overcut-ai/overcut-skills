@@ -145,7 +145,11 @@ query ($pid: String!) {
     id runId workflowId status statusMessage
     eventType triggerObjectName triggerObjectUrl
     startedAt endedAt duration
-    consumption { totalTokens inputTokens outputTokens }
+    # token totals are NESTED under `tokenUsage`, not fields of `consumption` directly
+    consumption {
+      tokenUsage { totalTokens inputTokens outputTokens cachedInputTokens cacheCreationTokens callCount }
+      stepCount totalExecutionTimeMs totalProcessingTimeMs status
+    }
   }
 }
 ```
@@ -162,9 +166,13 @@ query ($id: String!) {
 ```
 
 ```graphql
-# Debug a failing step: its logs (errors first) and agent sub-threads
+# Debug a failing step: its logs and agent sub-threads.
+# Read `workflowRun.statusMessage` FIRST - it usually already names the cause.
+# Do NOT pre-filter by `level: Error` here: a fatal error is sometimes logged at
+# `Info` (e.g. "[Error: ...]"), so an Error-only filter can come back empty. Pull
+# all levels and scan, or add `level: Error` only as a first pass you widen from.
 query ($stepId: String!) {
-  runStepLogs(where: { runStepId: $stepId, level: Error }, take: 50) {
+  runStepLogs(where: { runStepId: $stepId }, take: 50) {
     level message agentName threadId contents { content }
   }
   runStepThreads(runStepId: $stepId) { threadId agentName isComplete logCount }
