@@ -1,0 +1,25 @@
+{
+  "name": "<kebab-case-name>",
+  "definition": {
+    "name": "<kebab-case-name>",
+    "priority": 50,
+    "timeoutMs": 1800000,
+    "statusUpdateMethod": "comment",
+    "defaultModelKey": "<workspace-default>",
+    "triggers": [
+      { "event": "manual" }
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "name": "<step name>",
+        "action": "agent.run",
+        "instruction": "<what this agent should do, framework-free>",
+        "params": { "agent": "<agent-name>" },
+        "stepMaxDurationMinutes": 20
+      }
+    ],
+    "flow": []
+  },
+  "agentRefs": {}
+}
