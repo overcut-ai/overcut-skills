@@ -2,7 +2,21 @@
 
 The token can mutate anything its owner's permissions allow. **Always confirm with the user before any create / update / delete / commit / trigger.** Default to read-only.
 
-Mutation names and argument *shapes* below are verified against the schema; the exact fields inside each `*Input` type vary, so when building a create/update payload, ask the user for the fields they want to set rather than guessing required ones. (Introspection is off in production, so you cannot list input fields remotely - mirror the shape of the entity in `concepts.md` / `queries.md`.)
+Mutation names and argument *shapes* below are verified against the schema; the exact fields inside each `*Input` type vary, so when building a create/update payload, ask the user for the fields they want to set rather than guessing required ones.
+
+**Getting exact input shapes.** Introspection is disabled on the **production** endpoint, but is often enabled on non-prod (staging / self-hosted) endpoints. When it's available, list a create input's fields directly instead of guessing:
+
+```graphql
+query { __type(name: "AgentCreateInput") {
+  inputFields { name type { kind name ofType { kind name ofType { kind name } } } }
+} }
+```
+
+When introspection is off, **mirror a live entity** in the same account: read an existing similar `agent` / `workflow` and copy its structure. This matters most for workflows - the input shape gives you field *names*, but only a real example gives you valid `action` strings (e.g. `agent.run`), the `params` contract (e.g. `{ agentId, agentEngine: "overcut" }`), the entry-step convention (`flow: [{ from: "", to: "<stepId>" }]`), and valid trigger `event` enum values.
+
+**Two `*Input` shapes that are stable and easy to get wrong:**
+- `project` on `createAgent` / `createWorkflow` is a **connect wrapper**, not a bare id: `project: { connect: { id: $pid } }`.
+- `createProjectSecret` requires a non-null **`value`** at creation (plus `name`, `projectId`, `availableForAllExecutions`) - unlike secret *assignment*, a create cannot omit the value. Only ever send a value the user explicitly provided.
 
 Run the same way as queries:
 

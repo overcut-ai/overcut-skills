@@ -31,6 +31,7 @@ query ($id: String!) {
 }
 ```
 
+- `statusMessage` is the single highest-signal field - it usually already names the failing step and the error (e.g. `"Step discuss failed: [Error: CoordinatorNode requires agentConfig in state]"`). Read it before you touch any logs; you often don't need to go deeper.
 - `statusReason` (`EnumWorkflowRunStatusReason`: `InsufficientCredits`, `MaxConcurrency`) explains run-level aborts before you even read logs.
 - `version` tells you which committed version was running - a fix only takes effect on runs that start *after* a new commit.
 - In `steps`, find the one with `status: Failed`.
@@ -48,18 +49,18 @@ query ($stepId: String!) {
 
 `EnumRunStepStatus`: `Pending`, `Ready`, `Running`, `InSession`, `WaitingForExternal`, `WaitingForReply`, `Completed`, `Failed`, `Canceled`, `Terminating`.
 
-**4. Read the logs** - start with errors, widen only if needed:
+**4. Read the logs.** Prefer pulling all levels and scanning the tail - severity is unreliable:
 
 ```graphql
 query ($stepId: String!) {
-  runStepLogs(where: { runStepId: $stepId, level: Error }, take: 50) {
+  runStepLogs(where: { runStepId: $stepId }, take: 50) {
     level message agentName threadId messageType createdAt
     contents { content }
   }
 }
 ```
 
-`EnumLogLevel`: `Debug`, `Info`, `Warning`, `Error`. Filter `level: Error` first; widen to `Warning`/`Info` only if errors don't explain it.
+`EnumLogLevel`: `Debug`, `Info`, `Warning`, `Error`. **Do not trust `level: Error` as a filter to find the cause** - fatal errors are sometimes emitted at `Info` (the message text starts with `[Error: ...]` even though `level` is `Info`), so an Error-only query can return an empty set on a run that clearly failed. Pull all levels; if the volume is too high, use `level: Error` only as a first pass and always widen when it comes back empty.
 
 **5. For `agent.session` steps, split by sub-agent thread.** These steps fan out into threads; `agent.run` steps have a single implicit thread.
 
