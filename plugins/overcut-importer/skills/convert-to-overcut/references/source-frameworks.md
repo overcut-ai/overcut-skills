@@ -2,7 +2,9 @@
 
 How to detect each source framework and translate its constructs to Overcut (`Skill` / `Agent` / workflow `step` / `trigger` / dropped). Work per file - a repo may mix frameworks. When nothing matches, use the **generic fallback** at the end.
 
-Universal rule across all frameworks: **distill business logic, drop plumbing.** Keep intent (what/when/order/capabilities); discard the machinery that only existed to run the old framework.
+Universal rule across all frameworks, applied per layer:
+- **Skill-bound content** (checklists, standards, prompt bodies, playbooks) → **preserve** it near-verbatim. Only strip old-runtime references and framework wiring that would mislead the agent; splitting one big skill into focused skills is encouraged, dropping content is not.
+- **Agent/workflow orchestration** (who runs, in what order, on what trigger, with what tools) → **redesign** toward Overcut best practice: specialized single-responsibility agents, dedicated per-goal workflows modeled on playbooks. Drop the machinery that only existed to run the old framework.
 
 ---
 
@@ -144,10 +146,11 @@ Reusable checklists embedded in a backstory/goal (e.g. "always verify X, Y, Z") 
 
 **Recognize:** a `SKILL.md` (already skill-shaped), or loose `.md`/`.txt`/`.prompt` files that are system prompts, playbooks, checklists, or role definitions.
 
-**Map:**
-- Already a `SKILL.md` → normalize to the `target-formats.md` frontmatter (ensure `name`, `description`; strip any non-Overcut fields) and copy the body, dropping framework references.
-- A system-prompt file for one persona → an **Agent** `additionalInstructions` (and, if it contains a reusable checklist, also a **Skill**).
-- A shared checklist/standard/playbook used by many → a **Skill**.
+**Map** (skills are preserved, not rewritten - copy the body faithfully):
+- Already a `SKILL.md` → normalize *only the frontmatter* to the `target-formats.md` shape (ensure `name`, `description`; strip non-Overcut fields) and **copy the body verbatim**, editing only old-runtime references. Do not condense or reword the instructions.
+- A large or multi-topic skill → **split into several focused skills** rather than trimming it. Record the one-source → many-skills split in the manifest; every original instruction must land in one of the outputs.
+- A system-prompt file for one persona → an **Agent** `additionalInstructions` (and, if it embeds a reusable checklist, lift that checklist into its own **Skill** so other agents can share it).
+- A shared checklist/standard/playbook used by many → a **Skill**, attached only to the agents that use it.
 
 ---
 
@@ -155,8 +158,8 @@ Reusable checklists embedded in a backstory/goal (e.g. "always verify X, Y, Z") 
 
 When no recognizer matches, do not force a mapping. Read the file and ask three questions of its content:
 
-1. **Is it a reusable body of knowledge** (checklist, standard, domain rules)? → **Skill**.
-2. **Is it a persona/role definition** (system prompt, "you are…", role/goal)? → **Agent**.
-3. **Is it an ordered pipeline** (do A, then B, then C; a DAG; a state machine)? → **Workflow** (`steps` + `flow`), with each meaningful stage an `agent.run`/`agent.session` and each dependency an edge.
+1. **Is it a reusable body of knowledge** (checklist, standard, domain rules)? → **Skill** - preserve it verbatim; split it if it spans several topics.
+2. **Is it a persona/role definition** (system prompt, "you are…", role/goal)? → **Agent** - one per responsibility; split a do-everything persona into focused agents.
+3. **Is it an ordered pipeline** (do A, then B, then C; a DAG; a state machine)? → **Workflow(s)** - decompose it into dedicated per-goal workflows (`steps` + `flow`) rather than one 1:1 port, each modeled on the nearest playbook, with each meaningful stage an `agent.run`/`agent.session` and each dependency an edge.
 
 Anything that is purely infrastructure, packaging, or framework wiring → **drop**, and list it under "Dropped as plumbing" in the manifest so the user can confirm nothing important was lost.

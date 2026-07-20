@@ -20,15 +20,18 @@ allowed-tools: Read, Bash      # optional; only built-in tool names the skill ne
 
 # <Human Title>
 
-<Distilled, framework-free instructions: the checklist / standard / playbook the org
-actually wants applied. No Argo/kagents/LangGraph vocabulary. Written as guidance to an
-agent, not as a description of the old pipeline.>
+<The org's own instructions, preserved: the checklist / standard / playbook exactly as
+they wrote it. Do NOT summarize or reword. Edit only to remove old-framework vocabulary
+(Argo/kagents/LangGraph) and references to the old runtime, so it reads as guidance to an
+agent rather than a description of the old pipeline.>
 ```
 
 Rules:
+- **Preserve the body.** Copy the source instructions faithfully; do not condense, reorder, or "improve" them. The only edits are removing old-runtime/framework wiring that would mislead the agent. When unsure whether a line is business logic or plumbing, keep it.
+- **Split, don't trim.** If the source skill is oversized or spans several topics, break it into multiple focused `SKILL.md` folders - but every original instruction must survive in one of them.
 - `name` is kebab-case and unique within the project. `description` is the only field Overcut uses to decide relevance - make it specific and trigger-rich.
 - Keep the body about **durable knowledge** (review criteria, coding standards, domain rules, definitions of done). Move orchestration ("then call step 3") into the *workflow*, not the skill.
-- A Skill is reusable across agents. If two source agents share a checklist, emit **one** skill and link it from both.
+- A Skill is reusable across agents. If two source agents share a checklist, emit **one** skill and link it only from the agents that use it.
 
 **Registration** (done later, by the `overcut-api` skill): `createSkill(input: { projectId, name, path, ref, ... })` where `path` is the folder inside the connected repo. `createSkills` batches many.
 
@@ -37,6 +40,8 @@ Rules:
 ## 2. Agent - a persona spec (`*.agent.json`)
 
 An Overcut Agent is a configured LLM persona used inside workflow steps. Emit one JSON file per distinct role.
+
+**Specialize - one agent, one responsibility.** Model agents on the playbooks: each has a single sharp persona (a reviewer, an implementer, a doc writer, a triager), not a generalist that does everything. If a source agent wears several hats, split it into focused agents. Give each agent only the skills its job uses, and only the `availableTools` / `mcpServers` / `secrets` that responsibility requires - a reviewer that just comments needs less than an implementer that writes code.
 
 **Output:** `out/agents/<kebab-name>.agent.json`
 
@@ -94,6 +99,8 @@ When you pick anything other than an obvious match, mark it TODO in the manifest
 ## 3. Workflow - a definition (`*.workflow.json`)
 
 An Overcut Workflow is a triggered, ordered set of steps. Emit the `definition` plus a light wrapper.
+
+**One workflow, one goal.** Don't port a sprawling source graph as a single workflow - decompose it into dedicated workflows, one per outcome/trigger (review PRs, triage issues, cut a release), each modeled on the nearest playbook. A tight, single-purpose workflow with a clear trigger is the target shape.
 
 **Output:** `out/workflows/<kebab-name>.workflow.json`
 
