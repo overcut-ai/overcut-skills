@@ -46,7 +46,7 @@ scripts/overcut-gql.sh -f mutation.graphql -v '{"id":"..."}'
 | `commitWorkflow` | `data: CommitWorkflowInput!` | snapshot draft -> new live version. **Confirm first.** |
 | `discardWorkflowChanges` | `data: DiscardWorkflowChangesInput!` | reset draft to committed. **Destructive - confirm.** |
 | `restoreWorkflowVersion` | `data: RestoreWorkflowVersionInput!` | load an old version into the draft |
-| `triggerWorkflowManually` | `data: ManualWorkflowTriggerInput!` | start a run now |
+| `triggerWorkflowManually` | `data: ManualWorkflowTriggerInput!` | start a run now. **`workflowId` and `repositoryId` are both required (`String!`)**; optional: `useWorkingDraft`, `targetBranch`, `ticketId`, `message`, `dynamicParams`. Returns `ManualWorkflowTriggerResult { runId success message }`. |
 | `quitWorkflow` | `data: QuitWorkflowInput!` | stop an in-flight run |
 | `importWorkflow` | `projectId, workflowId?, agentMapping?` | import from an exported artifact (updates draft if `workflowId` given) |
 | `deleteWorkflow` | `where: { id }` | |
@@ -59,13 +59,20 @@ scripts/overcut-gql.sh -f mutation.graphql -v '{"id":"..."}'
 - A schedule only fires the **committed** version. A freshly created workflow (draft only, never committed) is safe to leave `active` - the schedule has nothing to run.
 
 ```graphql
-# Trigger a run. `repositoryId` is REQUIRED even for workflows that never touch code
-# (pass any connected repo, e.g. the one the workflow clones).
-# `useWorkingDraft: true` runs the DRAFT - the way to test without committing,
-# which pairs with safety rule 1 (never commit before the user has seen a test run).
+# Trigger a run. Always select runId - it is how you poll the run you just started.
+# Do not fall back to "most recent run for this workflow": that races with
+# concurrent triggers.
 mutation ($wid: String!, $rid: String!) {
-  triggerWorkflowManually(data: { workflowId: $wid, repositoryId: $rid, useWorkingDraft: true }) {
-    success message runId
+  triggerWorkflowManually(data: {
+    workflowId: $wid
+    repositoryId: $rid      # REQUIRED (String!) even for workflows that never touch
+                            # code - get it from repositories(projectId:)
+    useWorkingDraft: true   # runs the DRAFT: the way to test before committing (pairs
+                            # with safety rule 1), and needed whenever there is no
+                            # committed version yet (currentVersion: null)
+    # optional: targetBranch, ticketId, message, dynamicParams (JSON)
+  }) {
+    runId success message
   }
 }
 
