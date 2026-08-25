@@ -5,14 +5,14 @@
     "email": "team@overcut.ai"
   },
   "metadata": {
-    "description": "Official Overcut skills for Claude Code.",
+    "description": "Official Overcut skills for agentic coding tools.",
     "homepage": "https://github.com/overcut-ai/overcut-skills"
   },
   "plugins": [
     {
       "name": "overcut",
       "source": "./plugins/overcut",
-      "description": "Work with Overcut from Claude Code: connect to the Overcut GraphQL API to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, and more."
+      "description": "Work with Overcut from your coding agent: connect to the Overcut GraphQL API to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, and more."
     },
     {
       "name": "overcut-importer",
