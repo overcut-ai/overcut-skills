@@ -53,6 +53,11 @@ scripts/overcut-gql.sh -f mutation.graphql -v '{"id":"..."}'
 | `addWorkflowFromPlaybook` | `projectId, playbookKeys: [String!]!` | instantiate playbook template(s) |
 | `triggerRetrospective` | `data: TriggerRetrospectiveInput!` | run auto-improve analysis |
 
+**Trigger rules that fail non-obviously at create time:**
+- A `{ event: manual }` trigger is rejected with "Manual triggers must have a slash command configured" - always pair it: `{ event: manual, slashCommand: { command: "/my-command", requireMention: false } }`.
+- `schedule.cronExpression` runs in **UTC** - convert the user's local time and mention the DST drift when it matters.
+- A schedule only fires the **committed** version. A freshly created workflow (draft only, never committed) is safe to leave `active` - the schedule has nothing to run.
+
 ```graphql
 # Trigger a run. Always select runId - it is how you poll the run you just started.
 # Do not fall back to "most recent run for this workflow": that races with
@@ -60,9 +65,11 @@ scripts/overcut-gql.sh -f mutation.graphql -v '{"id":"..."}'
 mutation ($wid: String!, $rid: String!) {
   triggerWorkflowManually(data: {
     workflowId: $wid
-    repositoryId: $rid      # REQUIRED (String!) - get it from repositories(projectId:)
-    useWorkingDraft: true   # needed when the workflow has no committed version
-                            # (currentVersion: null) - common in test projects
+    repositoryId: $rid      # REQUIRED (String!) even for workflows that never touch
+                            # code - get it from repositories(projectId:)
+    useWorkingDraft: true   # runs the DRAFT: the way to test before committing (pairs
+                            # with safety rule 1), and needed whenever there is no
+                            # committed version yet (currentVersion: null)
     # optional: targetBranch, ticketId, message, dynamicParams (JSON)
   }) {
     runId success message
@@ -76,6 +83,8 @@ mutation ($wid: String!) {
   }
 }
 ```
+
+`updateWorkflow` returns `UpdateWorkflowResult`, not a `Workflow` - select `{ validationErrors workflow { id hasUnpublishedChanges } }` and read `validationErrors` before assuming the draft is good.
 
 ---
 
@@ -101,6 +110,10 @@ mutation ($aid: String!, $skills: [String!]!) {
 }
 ```
 
+**`availableTools`** takes built-in tool identifiers in snake_case (`read_file`, `post_channel_message`, ...). The canonical catalog lives in the docs: [Agent tools reference](https://docs.overcut.ai/docs/reference/tools#agent-tools-reference) - copy identifiers from there exactly (unknown names may be accepted silently by older servers, and a typo'd tool simply never appears in runs). Two non-obvious facts:
+- The `Custom` base type ships with an **empty** default tool set - list every tool the agent needs explicitly. Other base types carry implicit defaults on top of whatever you pass.
+- Channel messaging (Slack) is built in via `post_channel_message` - no Slack MCP server needed. On scheduled runs there is no trigger channel to default to, so the instruction must pass an explicit `channelId`.
+
 ---
 
 ## Skills
@@ -116,11 +129,25 @@ mutation ($aid: String!, $skills: [String!]!) {
 
 ## MCP servers
 
-| Mutation | Args |
-|---|---|
-| `createMcpServer` | `input: CreateMcpServerInput!` |
-| `updateMcpServer` | `id, input: UpdateMcpServerInput!` |
-| `deleteMcpServer` | `id` |
+| Mutation | Args | Notes |
+|---|---|---|
+| `createMcpServer` | `input: CreateMcpServerInput!` | `config` is JSON - shapes below |
+| `updateMcpServer` | `id, input: UpdateMcpServerInput!` | |
+| `deleteMcpServer` | `id` | returns `McpServer` - select subfields (`{ id }`) |
+
+`config` must contain **either** `command` (stdio) **or** `url` (remote), never both. `${SECRET_NAME}` placeholders anywhere in the config - env values, headers, args, partial strings included - resolve at run time from the pod's env; attach the secrets via `secretIds` so they're injected. `allowedTools: []` means unrestricted; a non-empty list filters. Server `name` must not contain `__` (reserved for tool namespacing).
+
+```jsonc
+// stdio (the catalog pattern)
+{ "command": "npx", "args": ["-y", "@vendor/some-mcp-server"],
+  "env": { "SOME_API_KEY": "${SOME_API_KEY}" } }
+
+// remote (Streamable HTTP / SSE) - natively supported
+{ "url": "https://mcp.example.com/mcp",
+  "headers": { "Authorization": "Bearer ${SOME_API_KEY}" } }
+```
+
+**For remote MCP servers, use the native `url` config - NOT an `mcp-remote` npx bridge.** In a headless run `mcp-remote` responds to any 401 by starting an interactive browser OAuth flow that hangs until the runner's fixed 30s MCP bootstrap timeout, surfacing only as "bootstrap timed out" with zero tools. The native config fails fast with the real HTTP error instead. (npx cold-starts also eat into the same 30s budget.)
 
 ---
 
@@ -138,11 +165,15 @@ mutation ($aid: String!, $skills: [String!]!) {
 
 | Mutation | Args | Notes |
 |---|---|---|
-| `createProjectSecret` | `input: CreateProjectSecretInput!` | value sent once, only if user provided it |
+| `createProjectSecret` | `input: CreateProjectSecretInput!` | value sent once, only if user provided it; `""` is accepted - see placeholder flow |
 | `toggleSecretAvailability` | `id, available: Boolean!` | flips `availableForAllExecutions` |
 | `deleteProjectSecret` | `id` | returns Boolean |
 | `setWorkflowSecrets` | `workflowId, secretIds: [String!]!` | assign by id |
 | `setAgentSecrets` | `agentId, secretIds: [String!]!` | assign by id |
+
+Constraints: `name` must match `^[A-Z][A-Z0-9_]+$`; `value` max 10KB. `deleteProjectSecret` returns a bare Boolean (no subfields).
+
+**Placeholder flow - the way to wire secrets without the value ever entering the conversation:** create the secret with `value: ""`, have the user paste the real value in the web UI (Project -> Secrets), and verify readiness via `hasValue` / `updatedAt` - never by asking for the value. If a config embeds the secret in a larger string (e.g. an `Authorization` header), decide up front whether the secret holds the full string or just the credential, and tell the user exactly which format to paste - a mismatch (e.g. a bearer token saved without its `Bearer ` prefix) fails only at run time as an auth error.
 
 ---
 
