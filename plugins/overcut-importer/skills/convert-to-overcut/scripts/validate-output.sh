@@ -9,6 +9,7 @@
 #   - every skills/*/SKILL.md has frontmatter with name + description
 #   - every agents/*.agent.json parses and has name, description, baseAgentType (legal enum),
 #     additionalInstructions; links reference real skills
+#   - (warning) an agent whose instructions imply file/code/git actions but has empty availableTools
 #   - every workflows/*.workflow.json parses; steps use only the 4 legal actions with unique ids;
 #     flow edges reference real step ids; params.agent names resolve to an agent file
 #   - MANIFEST.md exists
@@ -32,6 +33,18 @@ def warn(m): warnings.append(m)
 
 LEGAL_ACTIONS = {"git.clone", "repo.identify", "agent.run", "agent.session"}
 LEGAL_BASE = {"CodeReview","Custom","ProductManager","SeniorDeveloper","TechWriter","InternalRepoIdentify"}
+
+# Tool-shaped intent in an agent's instructions: prose that assumes filesystem/git access.
+# If it matches but availableTools is empty, the agent was likely shipped without the tools
+# its instructions rely on (the classic Custom-agent-with-no-tools gap).
+TOOL_VERB_RE = re.compile(
+    r"\b(read|open|edit|modify|update|write|create|delete|inspect|parse)\b[^.\n]{0,40}\b(file|files|filesystem|directory|folder|path|config|codebase|source)\b"
+    r"|\b(check ?out|clone|commit|branch|merge|rebase|stage|diff|patch|cherry[- ]?pick)\b"
+    r"|\b(run|execute|invoke)\b[^.\n]{0,30}\b(test|tests|suite|lint|linter|build|script|command)\b"
+    r"|\bthe (repo|repository|codebase|working tree|source code)\b"
+    r"|\bgit\b",
+    re.I,
+)
 
 # ---- skills ----
 skill_names = set()
@@ -72,6 +85,12 @@ for f in agent_files:
     bat = doc.get("baseAgentType")
     if bat and bat not in LEGAL_BASE:
         err(f"{f}: illegal baseAgentType '{bat}' (allowed: {sorted(LEGAL_BASE)})")
+    # instructions imply tool use, but no built-in tools were wired in
+    instr = doc.get("additionalInstructions") or ""
+    if not (doc.get("availableTools") or []) and TOOL_VERB_RE.search(instr):
+        warn(f"{f}: additionalInstructions imply file/code/git actions but availableTools is empty - "
+             f"add the built-in tools the agent needs (e.g. 'filesystem'/'git', with a git.clone step "
+             f"upstream for code), or confirm it needs none. See integration-mapping.md.")
 
 # resolve agent -> skill links after all skills known
 for f, doc in agent_docs.items():

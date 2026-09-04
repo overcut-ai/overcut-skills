@@ -27,6 +27,23 @@ Source frameworks call external tools (filesystem, git, Slack, GitHub, Jira, HTT
 | cloud SDK (AWS/GCP/Azure), kubectl, docker | almost always **drop** (infra, not SDLC business logic) | — |
 | unknown / bespoke internal API | **do not guess** → TODO under Integrations | — |
 
+## Implicit tool usage - keep `availableTools` consistent with the instructions
+
+The mapping table above assumes the source **declares** its tools (an explicit `tools:` list, a `ToolNode`, a `@n8n/...` integration node). Very often it does **not** - the tool usage lives only in prose. A distilled `additionalInstructions` says "read the failing test file", "check out the branch and run the suite", "apply the patch" - real filesystem/git actions - while the source never listed a tool. If you only populate `availableTools` from explicit declarations, you ship the classic broken agent: `baseAgentType: "Custom"`, `availableTools: []`, instructions that assume filesystem/git access that was never wired in. It imports clean and then does nothing.
+
+**Rule: the agent's `availableTools` must be able to satisfy what its `additionalInstructions` tell it to do.** After you distill the system prompt, re-read it for tool-shaped intent and populate `availableTools` accordingly, even when the source had no explicit tool list:
+
+- Mentions of reading/editing/writing files, "the codebase", "the config", running tests/lint/build → add `"filesystem"`.
+- Mentions of branches, commits, diffs, checkout, "the repo", applying a patch → add `"git"` **and** make sure the workflow runs a `git.clone` (with `repo.identify` first when the repo comes from the trigger) *before* this agent's step. `git` with no upstream clone still can't see code.
+- Mentions of a specific external provider (GitHub PR comment, Slack post, Jira issue) → an MCP recommendation + secret per the table, not `availableTools`.
+
+Two guardrails so this never becomes fabrication:
+
+1. **Only add the built-in tool the prose actually implies** - `filesystem` / `git` are safe, config-free inferences. Do **not** invent MCP servers or secrets from a vague verb; when the intent points at an external provider you can't map with confidence, leave it and write a TODO (see below).
+2. **Record every inferred tool as a MANIFEST TODO** - e.g. *"Agent `<x>`: `availableTools` inferred as `filesystem`/`git` from its instructions - confirm, and confirm a `git.clone` precedes it."* The reviewer needs to see that the converter reasoned from prose rather than a declared list.
+
+`validate-output.sh` warns when an agent's instructions read tool-shaped but `availableTools` is empty - treat that warning as a prompt to apply this rule, not noise.
+
 ## Confidence and the auto-map rule
 
 Attach a `confidence` to every MCP recommendation:
