@@ -10,7 +10,10 @@ Workspace                      (top-level tenant - one per API token)
 ├── Git Organizations          (connected GitHub / GitLab / Jira / etc.)
 ├── Repositories               (connected git repos - code and/or tickets)
 ├── LLM model registry         (which models agents may use; has a default)
-└── Project                    (a workspace can have many)
+├── Context Parameters         (named values referenced as {{params.<key>}}; defined at
+│                               workspace or project level, overridden per scope)
+├── Workspace Library          (one special project, kind: Library - shared items, never runs)
+└── Project                    (a workspace can have many; kind: Standard)
     ├── Workflow                (automations - see below)
     │   └── Run                 (one execution of a workflow on a trigger event)
     │       └── Run Step        (one executed step, with logs + agent sub-threads)
@@ -26,6 +29,9 @@ Workspace                      (top-level tenant - one per API token)
 |---|---|---|
 | Workspace, Repository, Git Organization, User, Team, LLM model | Workspace | (implicit - the token's workspace) |
 | Workflow, Agent, MCP Server, Skill, Project Secret | Project | a `projectId` |
+| Workspace Library items (same five entity types) | The library project | the id from `libraryProject` used as `projectId` |
+| Context Parameter definition | Workspace, or one Project | `contextParameters(where: { projectId })` |
+| Context Parameter override | Project / Repository / Workflow / Orchestration / Agent | a `scope` + `scopeId` |
 | Run, Run Step | Workflow | a `workflowId` (or `projectId`) |
 
 ## Containers
@@ -33,6 +39,11 @@ Workspace                      (top-level tenant - one per API token)
 - **Workspace** - the top-level tenant. Owns users, teams, roles, billing/subscription, connected git/ticket organizations, the LLM model registry, and a default model. Your API token belongs to exactly one workspace. `currentWorkspace` returns it.
 - **Project** - a container inside a workspace. Owns Agents, Workflows, MCP Servers, Skills, and Project Secrets. Almost all user-facing CRUD is project-scoped, so you pass a `projectId`.
 - **Repository** - a connected git repo, used for code operations (`useForCode`) and/or ticket operations (`useForTickets`). Belongs to the workspace; many projects can include the same repo.
+- **Workspace Library** - exactly one per workspace: a project with `kind: Library` that never runs anything (`libraryProject` returns it, creating it on first access). Two sharing models live in it:
+  - **By reference** - its MCP Servers, Skills, Project Secrets and Agents are attached by other projects using the library item's id, exactly like a project item (an `agent.run` step can name a library agent id; `assignMcpServersToAgent` accepts library server ids).
+  - **By copy** - its Workflows and Orchestrations are *templates*: never dispatched, cannot be activated. A project installs the template's **last committed version** as its own draft (`installLibraryWorkflow` / `installLibraryOrchestration`); the copy is independent afterwards.
+  Library items may only link other library items (a library MCP server only library secrets, a library agent only library MCP servers / skills / secrets). `promote*ToLibrary` mutations move a project item into the library, keeping its id.
+- **Context Parameter** - a named, plain-text value referenced in templates as `{{params.<key>}}` (step instructions, string step params, `script.run` env values, agent `additionalInstructions`). A **definition** (`key`, `description`, optional `defaultValue`) lives at workspace level (visible to every project) or at one project. **Overrides** are set per scope and resolved per run by precedence, least to most specific: workspace default < `PROJECT` < `REPOSITORY` < `WORKFLOW` < `ORCHESTRATION` < `AGENT`. An orchestration value beats the workflow's own; an agent value applies only to steps using that agent. Keys are workspace-unique and immutable. Values are plain text that shows up in prompts and logs - **never a credential** (that is a Project Secret).
 
 ## Automation building blocks
 
@@ -58,3 +69,4 @@ Workspace                      (top-level tenant - one per API token)
 
 - An agent's `availableTools` is a list of **built-in** tool names. It is *not* the set of MCP tools - those arrive via assigned MCP Servers and their `allowedTools`.
 - "Skill" here (capital-S, the Overcut entity attached to agents) is different from a coding-agent skill like this one. This skill runs in your conversation; an Overcut Skill is attached to the user's agents and runs inside their workflows.
+- A context parameter is **not** a secret and a secret is **not** a parameter. Parameters are plain-text configuration (base branch, review conventions, reviewer list) that is deliberately visible; secrets are encrypted credentials whose values the API never returns. Putting a token in a parameter leaks it into every rendered prompt and run log.

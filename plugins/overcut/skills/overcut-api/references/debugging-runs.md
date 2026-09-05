@@ -32,7 +32,8 @@ query ($id: String!) {
 ```
 
 - `statusMessage` is the single highest-signal field - it usually already names the failing step and the error (e.g. `"Step discuss failed: [Error: CoordinatorNode requires agentConfig in state]"`). Read it before you touch any logs; you often don't need to go deeper.
-- `statusReason` (`EnumWorkflowRunStatusReason`: `InsufficientCredits`, `MaxConcurrency`) explains run-level aborts before you even read logs.
+- `statusReason` (`EnumWorkflowRunStatusReason`: `ContextParameterUnresolved`, `Infrastructure`, `InsufficientCredits`, `MaxConcurrency`) explains run-level aborts before you even read logs. A run aborted at *preparation* (before any pod) has `status: Failed` with **no failed step** - the funnel stops here.
+- `resolvedContextParameters` (select it when the workflow uses `{{params.*}}`) is the map the run actually used: `{ run: { key: value }, agents: { agentId: { key: value } } }`. Compare it with what the user expected before blaming an instruction.
 - `version` tells you which committed version was running - a fix only takes effect on runs that start *after* a new commit.
 - In `steps`, find the one with `status: Failed`.
 
@@ -82,6 +83,9 @@ query ($stepId: String!) {
 | Agent step: timed out | step/workflow timeout too low, or model too slow | `definition.timeoutMs`, `step.stepMaxDurationMinutes`, `agent.modelKey` |
 | `repo.identify` returned nothing | trigger context lacked repo info, or logic is wrong | `triggerObject*` on the run; the step `instruction` |
 | `statusReason: InsufficientCredits` | workspace out of credits | billing / `currentWorkspace.subscription` |
+| `statusReason: ContextParameterUnresolved`, no failed step, `statusMessage` names a key | a referenced `{{params.<key>}}` has no override on the run's path and no default | `contextParameterResolutionPreview(workflowId, repositoryId)` shows the key and status; fix with `updateContextParameter` (add a default) or `setContextParameterValue` at a scope on the path |
+| Agent used the wrong branch / convention / reviewer list | a more specific scope (often an `ORCHESTRATION` override) won the resolution | `workflowRun.resolvedContextParameters`; `contextParameterEffectiveValues(scope: WORKFLOW, scopeId)` -> `overriddenBy` |
+| `commitWorkflow` / `createAgent` / `updateAgent` error "Unknown context parameter: params.x" | key never defined, or defined project-level in a different project | `contextParameters(where: { projectId })`; `createContextParameter` (workspace-level if shared) |
 | Step succeeded but next step broke | output-contract drift between steps | compare producing step `output` vs consuming step `instruction` |
 
 ## Stats

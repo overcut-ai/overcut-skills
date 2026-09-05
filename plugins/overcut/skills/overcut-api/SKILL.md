@@ -1,6 +1,6 @@
 ---
 name: overcut-api
-description: Connect to the Overcut GraphQL API with a personal API token to explore and manage an Overcut account - workspaces, projects, workflows, agents, skills, MCP servers, runs, secrets, repositories, playbooks, and configuration. Use when the user wants to query, inspect, audit, report on, or script their Overcut setup from outside the web UI (e.g. "list my workflows", "show this agent's skills", "why did this run fail", "what MCP servers are configured", "export my workflow"). Also use when the user mentions an Overcut API token or the Overcut GraphQL endpoint.
+description: Connect to the Overcut GraphQL API with a personal API token to explore and manage an Overcut account - workspaces, projects, workflows, agents, skills, MCP servers, runs, secrets, context parameters, the workspace library, repositories, playbooks, and configuration. Use when the user wants to query, inspect, audit, report on, or script their Overcut setup from outside the web UI (e.g. "list my workflows", "show this agent's skills", "why did this run fail", "what MCP servers are configured", "export my workflow", "set base_branch for this repo", "share this agent with every project"). Also use when the user mentions an Overcut API token or the Overcut GraphQL endpoint.
 license: Apache-2.0
 allowed-tools: Bash, Read
 ---
@@ -58,6 +58,8 @@ The standard exploration path, top down:
 3. Drill into one entity by id: `workflow`, `agent`, `skill` (+ `skillContent`), `mcpServer`, `project`.
 4. Inspect execution history: `workflowRuns` (filter by `projectId`/`workflowId`/`status`), then `workflowRun` -> `steps`, then `runStepLogs` / `runStepThreads` to debug a failure.
 5. **Orchestrations** are a parallel entity family (goal-driven supervisors that run workflows on a tracked item until a goal is met): `orchestrations` / `orchestration` for the authored definition, `orchestrationInstances` / `orchestrationInstance` for runtime, `orchestrationDecisions` / `orchestrationDiscussion` for the human-in-the-loop gate. Load `references/orchestrations.md` for the full surface.
+6. **Context parameters** (`{{params.<key>}}` values that differ per project / repository / workflow / orchestration / agent): `contextParameters` for definitions, `contextParameterEffectiveValues` for what one entity resolves to, `contextParameterResolutionPreview` before committing a workflow that references them. Catalog in `references/queries.md`; model in `references/concepts.md`.
+7. **Workspace library** (the one shared, non-runnable project): `libraryProject` gives its id; then the usual project-scoped list queries show the shared MCP servers, skills, secrets, agents and the workflow / orchestration templates.
 
 **`references/queries.md` is the catalog** - every read query with its real arguments, verified field names, and copy-paste examples. Load it whenever you need a query you do not already have memorized.
 
@@ -68,12 +70,13 @@ Reads that return JSON opaque without context - load the matching reference when
 
 ## 5. Manage (write)
 
-The same token can mutate anything its permissions allow: create/update/activate workflows and agents, assign skills and MCP servers, manage secrets (by reference - never values), trigger a workflow run, import/export, add workflows from playbooks.
+The same token can mutate anything its permissions allow: create/update/activate workflows and agents, assign skills and MCP servers, manage secrets (by reference - never values), define context parameters and set their per-scope overrides, promote items into the workspace library and install its templates, trigger a workflow run, import/export, add workflows from playbooks.
 
-**`references/mutations.md` covers the write operations.** Two safety rules baked into Overcut's model that you must respect:
+**`references/mutations.md` covers the write operations.** Three safety rules baked into Overcut's model that you must respect:
 
 - **Workflows are draft + committed.** Editing changes the *draft*; production keeps running the last *committed* version until `commitWorkflow`. Never `commitWorkflow` or `discardWorkflowChanges` without showing the user what changes and getting explicit confirmation. **Orchestrations follow the identical model** (`commitOrchestration` / `discardOrchestrationChanges`) - same rule.
 - **Secrets are referenced by id, never by value.** Reading a secret returns `hasValue: true/false`, never the plaintext. Do not attempt to read or echo secret values.
+- **Context parameters are plain text, never credentials, and commit validates them.** A `{{params.<key>}}` in a draft must name a defined parameter or `commitWorkflow` fails; a defined key with no value on the run's path fails every run at preparation. Run `contextParameterResolutionPreview` before committing.
 
 Always confirm with the user before any create/update/delete/commit/trigger. Default to read-only unless the user clearly asked to change something.
 
@@ -111,7 +114,7 @@ This skill is about **reaching the API**: connecting, exploring, and doing CRUD.
 - `references/concepts.md` - Overcut domain model and how entities relate (read this first).
 - `references/queries.md` - read-query catalog with verified arguments and examples.
 - `references/mutations.md` - write-operation catalog and safety rules.
-- `references/workflow-definition.md` - decode the `workflow.definition` JSON (steps, action types, flow, triggers, events).
+- `references/workflow-definition.md` - decode the `workflow.definition` JSON (steps, action types, flow, triggers, events, `{{trigger.*}}` / `{{outputs.*}}` / `{{params.*}}` template expressions).
 - `references/orchestrations.md` - orchestrations end to end: definition, instances, steps, decisions, discussions (HITL), and their mutations.
 - `references/debugging-runs.md` - diagnose a failed run end to end through the API.
 - `scripts/overcut-gql.sh` - thin curl wrapper that handles auth, JSON encoding, and error detection.

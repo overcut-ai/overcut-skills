@@ -1,7 +1,7 @@
 {
   "name": "overcut",
-  "description": "Work with Overcut from Claude Code. Bundles the overcut-api skill for connecting to the Overcut GraphQL API to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, secrets, repositories, and playbooks.",
-  "version": "1.2.0",
+  "description": "Work with Overcut from Claude Code. Bundles the overcut-api skill for connecting to the Overcut GraphQL API to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, secrets, context parameters, the workspace library, repositories, and playbooks.",
+  "version": "1.3.0",
   "author": {
     "name": "Overcut",
     "email": "team@overcut.ai"
