@@ -11,6 +11,9 @@
 #     additionalInstructions; links reference real skills
 #   - every workflows/*.workflow.json parses; steps use only the 4 legal actions with unique ids;
 #     flow edges reference real step ids; params.agent names resolve to an agent file
+#   - every {{params.<key>}} referenced in an agent's additionalInstructions or a workflow's
+#     definition is declared in that artifact's contextParameters (warning); declared keys
+#     are well-formed (error); a declared key that looks like a credential is flagged (warning)
 #   - MANIFEST.md exists
 #
 # Exit non-zero if any error is found. Warnings do not fail the run.
@@ -32,6 +35,43 @@ def warn(m): warnings.append(m)
 
 LEGAL_ACTIONS = {"git.clone", "repo.identify", "agent.run", "agent.session"}
 LEGAL_BASE = {"CodeReview","Custom","ProductManager","SeniorDeveloper","TechWriter","InternalRepoIdentify"}
+PARAM_REF = re.compile(r"\{\{\{?\s*params\.([A-Za-z0-9_]+)")
+PARAM_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+SECRETY = re.compile(r"(token|secret|password|passwd|api_?key|private_?key|credential)", re.I)
+
+def check_context_parameters(f, doc, texts):
+    """Declared keys are well-formed and not credential-shaped; every {{params.x}} in
+    `texts` is declared on this artifact."""
+    declared = set()
+    for i, p in enumerate(doc.get("contextParameters") or []):
+        if not isinstance(p, dict) or not p.get("key"):
+            err(f"{f}: contextParameters[{i}] needs a 'key'"); continue
+        key = p["key"]
+        if not PARAM_KEY.match(key):
+            err(f"{f}: context parameter key '{key}' must match ^[A-Za-z_][A-Za-z0-9_]*$ (max 64 chars)")
+        if not p.get("description"):
+            warn(f"{f}: context parameter '{key}' has no description")
+        if SECRETY.search(key):
+            warn(f"{f}: context parameter '{key}' looks like a credential - parameters are plain text in prompts and logs; use secrets[] instead")
+        declared.add(key)
+    referenced = set()
+    for t in texts:
+        if isinstance(t, str):
+            referenced.update(PARAM_REF.findall(t))
+    for key in sorted(referenced - declared):
+        warn(f"{f}: references {{{{params.{key}}}}} but does not declare it in contextParameters (createAgent / commitWorkflow reject undefined keys)")
+    for key in sorted(declared - referenced):
+        warn(f"{f}: declares context parameter '{key}' that nothing in this artifact references")
+
+def walk_strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from walk_strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from walk_strings(v)
 
 # ---- skills ----
 skill_names = set()
@@ -72,6 +112,7 @@ for f in agent_files:
     bat = doc.get("baseAgentType")
     if bat and bat not in LEGAL_BASE:
         err(f"{f}: illegal baseAgentType '{bat}' (allowed: {sorted(LEGAL_BASE)})")
+    check_context_parameters(f, doc, [doc.get("additionalInstructions")])
 
 # resolve agent -> skill links after all skills known
 for f, doc in agent_docs.items():
@@ -114,6 +155,7 @@ for f in wf_files:
     trig = d.get("triggers")
     if not trig:
         err(f"{f}: definition has no triggers (use [{{\"event\":\"manual\"}}] as a placeholder)")
+    check_context_parameters(f, doc, list(walk_strings(d)))
 
 # ---- manifest ----
 if not os.path.isfile(os.path.join(out, "MANIFEST.md")):

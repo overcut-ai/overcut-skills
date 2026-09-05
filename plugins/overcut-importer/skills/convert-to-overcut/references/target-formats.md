@@ -53,7 +53,10 @@ An Overcut Agent is a configured LLM persona used inside workflow steps. Emit on
   "mcpServers": [
     { "catalogKey": "github", "allowedTools": ["create_pr_comment"], "confidence": "high" }
   ],
-  "secrets": ["GITHUB_TOKEN"]
+  "secrets": ["GITHUB_TOKEN"],
+  "contextParameters": [
+    { "key": "base_branch", "description": "Branch PRs are compared against", "default": "main" }
+  ]
 }
 ```
 
@@ -71,8 +74,9 @@ Field reference:
 | `skills` | string[] | `name`s of skills (from `out/skills/`) to attach. Assigned via `assignSkillsToAgent`. |
 | `mcpServers` | object[] | Recommendations, not live config: `{ catalogKey, allowedTools, confidence }`. Assigned via `assignMcpServersToAgent` after the server exists. |
 | `secrets` | string[] | Secret **names** the agent needs. The user creates them; assigned by id via `setAgentSecrets`. Never a value. |
+| `contextParameters` | object[] | Every `{{params.<key>}}` the `additionalInstructions` reference: `{ key, description, default? }`. Definitions the user creates (`createContextParameter`) **before** the agent, because `createAgent` rejects undefined keys. See "Context parameters" below. |
 
-`skills` / `mcpServers` / `secrets` are **link intents** the importer records - the agent is created first with `createAgent(data: AgentCreateInput)`, then the links are applied. Keep them as names/keys, never ids (ids don't exist until creation).
+`skills` / `mcpServers` / `secrets` / `contextParameters` are **link intents** the importer records - the agent is created after its parameters exist (`createAgent(data: AgentCreateInput)`), then the other links are applied. Keep them as names/keys, never ids (ids don't exist until creation).
 
 ### Choosing `baseAgentType`
 
@@ -113,7 +117,7 @@ An Overcut Workflow is a triggered, ordered set of steps. Emit the `definition` 
       { "id": "identify", "name": "Identify repo", "action": "repo.identify", "params": {}, "stepMaxDurationMinutes": 5 },
       { "id": "clone",    "name": "Clone",          "action": "git.clone",    "params": {}, "stepMaxDurationMinutes": 5 },
       { "id": "review",   "name": "Review billing PR", "action": "agent.run",
-        "instruction": "Review the PR diff against the billing review checklist. Post findings as a PR comment.",
+        "instruction": "Review the PR diff against the billing review checklist, comparing against {{params.base_branch}}. Post findings as a PR comment and request review from {{params.billing_reviewers}}.",
         "params": { "agent": "billing-pr-reviewer" }, "stepMaxDurationMinutes": 20 }
     ],
     "flow": [
@@ -121,7 +125,11 @@ An Overcut Workflow is a triggered, ordered set of steps. Emit the `definition` 
       { "from": "clone",    "to": "review" }
     ]
   },
-  "agentRefs": { "billing-pr-reviewer": "billing-pr-reviewer" }
+  "agentRefs": { "billing-pr-reviewer": "billing-pr-reviewer" },
+  "contextParameters": [
+    { "key": "base_branch", "description": "Branch PRs are compared against", "default": "main" },
+    { "key": "billing_reviewers", "description": "Reviewers to request on billing PRs; differs per team" }
+  ]
 }
 ```
 
@@ -137,7 +145,25 @@ An Overcut Workflow is a triggered, ordered set of steps. Emit the `definition` 
 | `statusUpdateMethod` | `comment` / `reuse_comment` / `static_comment`. Default `comment`. |
 | `defaultModelKey` | Placeholder `"<workspace-default>"`. |
 
-`agentRefs` is a helper map (step's `params.agent` name -> agent `name`) so a later `importWorkflow` can supply `agentMapping`. It is not part of `definition`.
+`agentRefs` is a helper map (step's `params.agent` name -> agent `name`) so a later `importWorkflow` can supply `agentMapping`. It is not part of `definition`. `contextParameters` is the same kind of helper for every `{{params.<key>}}` the definition references (see below).
+
+### Context parameters - configuration that varies, without copying the workflow
+
+Source pipelines carry values that differ per environment, team, or repository: a target branch, a reviewer list, a Jira project key, a naming convention, a threshold. Do **not** hardcode them into an `instruction`, and do not emit one workflow per variant. Overcut resolves `{{params.<key>}}` per run from the most specific value on the run's path (workspace default < project < repository < workflow < orchestration < agent), so one workflow serves every team.
+
+Emit the reference in the template text (`instruction`, string `params`, an agent's `additionalInstructions`) and declare the key in the artifact's `contextParameters` list:
+
+| Field | Notes |
+|---|---|
+| `key` | `snake_case`, `^[A-Za-z_][A-Za-z0-9_]*$`, max 64 chars. Workspace-unique and immutable once created, so pick a name that reads well outside this workflow (`base_branch`, not `branch`). |
+| `description` | What the value means and who should override it. |
+| `default` | Optional. The value the source used when it was the same for everyone. Omit it when every team must set its own value, and say so in the TODO. |
+
+Rules:
+- **A parameter is never a credential.** Values are plain text visible in prompts and logs. Tokens, keys and passwords stay `secrets[]` (`integration-mapping.md`).
+- Declare every key you reference; the validator warns on undeclared `{{params.*}}`. The same key used by several artifacts is declared once per artifact that references it - the importer dedupes at creation.
+- At import time the key must exist **before** `createAgent` (validated immediately) and before `commitWorkflow` (validated at commit). `references/output-layout.md` orders the import steps accordingly.
+- Trigger-time data (PR number, author, ticket key) is `{{trigger.*}}`, not a parameter. Data produced by an earlier step is `{{outputs.<stepId>.*}}`. Parameters are for configuration only.
 
 ### The four - and only four - step actions
 
@@ -178,5 +204,6 @@ Output must import even when the source lacks required fields. Use exactly these
 | trigger | `[{ "event": "manual" }]` | "No source trigger found - define the real trigger." |
 | trigger filter | `conditions: { "TODO": "..." }` | "Narrow the trigger conditions in the UI." |
 | integration config | omit; list under Integrations | "Assign MCP server <x> + secret <y> to agent <z>." |
+| a per-team / per-env value with no single source default | `{{params.<key>}}` + `contextParameters` entry without `default` | "Define context parameter `<key>` and set a value per project / repository before the first run." |
 
-Never invent a real `modelKey`, secret value, MCP endpoint, or repo path.
+Never invent a real `modelKey`, secret value, MCP endpoint, repo path, or context parameter value the source did not contain.

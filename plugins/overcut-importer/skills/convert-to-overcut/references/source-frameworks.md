@@ -22,7 +22,8 @@ Universal rule across all frameworks: **distill business logic, drop plumbing.**
 | `CronWorkflow.spec.schedule` | a schedule trigger (cron) |
 | task that reacts to a webhook/sensor (Argo Events) | matching Overcut trigger (`custom_event`, PR/issue event) |
 | `template.container/script/resource`, `image`, `command`, `args` | **drop** - keep only the human intent of what that container did |
-| `retryStrategy`, `parallelism`, `podGC`, `activeDeadlineSeconds`, `volumes`, `nodeSelector`, `serviceAccountName`, `arguments.parameters` plumbing | **drop** (Overcut owns execution). Turn genuinely business parameters into instruction text. |
+| `retryStrategy`, `parallelism`, `podGC`, `activeDeadlineSeconds`, `volumes`, `nodeSelector`, `serviceAccountName` | **drop** (Overcut owns execution). |
+| `arguments.parameters` / `inputs.parameters` | plumbing (image tags, paths) → **drop**. A parameter that encodes a business value varying per team/env/repo (target branch, reviewer list, project key, threshold) → `{{params.<key>}}` + a `contextParameters` entry; a value that is the same everywhere → plain instruction text. |
 
 The distillation is the point: an Argo task is usually a container running a script. You want the *sentence* describing what that script accomplishes for the SDLC, expressed as an agent `instruction` - not the image or command.
 
@@ -116,6 +117,7 @@ Reusable checklists embedded in a backstory/goal (e.g. "always verify X, Y, Z") 
 | trigger nodes (`*.webhook`, `*.cron`, `*.githubTrigger`, `*.slackTrigger`) | Overcut trigger (`custom_event` / schedule / PR/issue / `mention`) |
 | integration nodes (Slack/GitHub/HTTP/Postgres/…) | `mcpServers[]` + `secrets[]` per `integration-mapping.md` |
 | `Set`/`Function`/`IF`/`Merge` glue nodes | usually **drop**; an `IF` that gates the business path → a `flow` `condition` |
+| a `Set` node or node parameter holding a per-environment constant (channel name, project key, branch, threshold) | `{{params.<key>}}` + `contextParameters` entry |
 | n8n credentials | `secrets[]` by **name** (never values) |
 
 ---
@@ -137,6 +139,7 @@ Reusable checklists embedded in a backstory/goal (e.g. "always verify X, Y, Z") 
 | `actions/checkout` | fold into `git.clone` |
 | build/test/lint/deploy/cache/setup steps | **drop** unless the *decision logic* in them is the point |
 | `secrets.*` used by a kept step | `secrets[]` by name |
+| `vars.*`, `env:` constants, `workflow_dispatch.inputs` / `workflow_call.inputs` used by a kept step | `{{params.<key>}}` + `contextParameters` entry (the input `default` becomes the parameter `default`). Never a credential. |
 
 ---
 
@@ -160,3 +163,5 @@ When no recognizer matches, do not force a mapping. Read the file and ask three 
 3. **Is it an ordered pipeline** (do A, then B, then C; a DAG; a state machine)? → **Workflow** (`steps` + `flow`), with each meaningful stage an `agent.run`/`agent.session` and each dependency an edge.
 
 Anything that is purely infrastructure, packaging, or framework wiring → **drop**, and list it under "Dropped as plumbing" in the manifest so the user can confirm nothing important was lost.
+
+Across every framework, apply one more test to each constant you keep: **would a second team, repository, or environment want a different value?** If yes (branch names, reviewer lists, ticket project keys, Slack channels, naming conventions, thresholds), reference it as `{{params.<key>}}` and declare it in `contextParameters` instead of baking it into the instruction - see `target-formats.md` "Context parameters". If it is a credential, it is a secret, never a parameter.

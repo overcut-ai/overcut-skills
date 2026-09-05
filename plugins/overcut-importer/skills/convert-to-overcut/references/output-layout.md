@@ -22,8 +22,8 @@ Naming: kebab-case throughout, matching the `name` inside each artifact. Cross-r
 ## What goes in each file
 
 - `skills/<name>/SKILL.md` - Skill format from `target-formats.md` §1. Valid frontmatter (`name`, `description` required), framework-free body.
-- `agents/<name>.agent.json` - Agent spec from `target-formats.md` §2. Required: `name`, `description`, `baseAgentType`, `additionalInstructions`. Links (`skills`/`mcpServers`/`secrets`) by name.
-- `workflows/<name>.workflow.json` - `{ name, definition, agentRefs }` from `target-formats.md` §3. Steps use only the four legal actions; `flow` references real step ids.
+- `agents/<name>.agent.json` - Agent spec from `target-formats.md` §2. Required: `name`, `description`, `baseAgentType`, `additionalInstructions`. Links (`skills`/`mcpServers`/`secrets`/`contextParameters`) by name.
+- `workflows/<name>.workflow.json` - `{ name, definition, agentRefs, contextParameters }` from `target-formats.md` §3. Steps use only the four legal actions; `flow` references real step ids; every `{{params.<key>}}` in the definition is declared in `contextParameters`.
 
 Use the templates in `assets/templates/` as the starting point for each.
 
@@ -51,10 +51,11 @@ The action list, grouped. Every placeholder and every low-confidence decision la
 - **Placeholders to fill** - each `<workspace-default>` model, each inferred/defaulted `baseAgentType`, each manual-trigger placeholder.
 - **Integrations to wire** - per agent: which MCP server + secret to assign (from `integration-mapping.md`), including low-confidence ones the converter refused to guess.
 - **Secrets to create** - by name, never value. Flag any hardcoded credential found in the source (to create + rotate).
+- **Context parameters to define** - every distinct `key` across all artifacts' `contextParameters`, with its description, the default carried from the source (or "no default - set per project/repository"), and which artifacts reference it. Recommend workspace-level unless the key is clearly specific to one project.
 - **Trigger conditions to narrow** - any `conditions: { "TODO": ... }`.
 
 ### 5. Import steps
-The exact ordered steps to push this into a live project via the `overcut-api` skill (Skills → Agents → Workflows; draft vs commit caveat). Mirror SKILL.md §6.
+The exact ordered steps to push this into a live project via the `overcut-api` skill (Context parameters → Skills → Agents → Workflows; draft vs commit caveat). Parameters go first because `createAgent` and `commitWorkflow` reject undefined keys. Mirror SKILL.md §6.
 
 ## Idempotence
 

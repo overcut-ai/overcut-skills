@@ -31,13 +31,17 @@ _Everything intentionally not carried over, with why. State it even if empty._
 ### Secrets to create (by name, never value)
 - [ ] `<SECRET_NAME>` — for `<tool/agent>`. _(If a credential was hardcoded in the source: create it here and rotate the leaked value.)_
 
+### Context parameters to define (`{{params.<key>}}`)
+- [ ] `<key>` — `<description>`. Default: `<value from source | none - set per project/repository>`. Referenced by: `<workflow/agent names>`. Level: `<workspace | project>`.
+
 ### Trigger conditions to narrow
 - [ ] `<workflow>`: finish trigger `conditions` in the UI (repo/label/path/author).
 
 ## 5. Import steps (optional — via the `overcut-api` skill)
 
-1. Commit `skills/` into a repo connected to the target project → `createSkill` / `createSkills` for each (`path` + `ref`).
-2. `createAgent` for each `agents/*.agent.json`, then `assignSkillsToAgent`, `assignMcpServersToAgent`, `setAgentSecrets`.
-3. `createWorkflow` (or `importWorkflow` with `agentMapping` from `agentRefs`) for each `workflows/*.workflow.json`. This edits the **draft** — review in the UI, then `commitWorkflow` to go live.
+1. `createContextParameter` for each key under "Context parameters to define" (dedupe across artifacts; keys are workspace-unique). Do this first: `createAgent` and `commitWorkflow` reject undefined keys. Set per-scope overrides with `setContextParameterValue` where the source had different values.
+2. Commit `skills/` into a repo connected to the target project → `createSkill` / `createSkills` for each (`path` + `ref`).
+3. `createAgent` for each `agents/*.agent.json`, then `assignSkillsToAgent`, `assignMcpServersToAgent`, `setAgentSecrets`.
+4. `createWorkflow` (or `importWorkflow` with `agentMapping` from `agentRefs`) for each `workflows/*.workflow.json`. This edits the **draft** — review in the UI, run `contextParameterResolutionPreview(workflowId, useWorkingDraft: true)` to confirm every key resolves, then `commitWorkflow` to go live.
 
 Do not create secret values, `commitWorkflow`, or trigger runs without explicit confirmation.
