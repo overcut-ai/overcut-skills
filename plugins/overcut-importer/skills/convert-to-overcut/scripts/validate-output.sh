@@ -9,7 +9,7 @@
 #   - every skills/*/SKILL.md has frontmatter with name + description
 #   - every agents/*.agent.json parses and has name, description, baseAgentType (legal enum),
 #     additionalInstructions; links reference real skills
-#   - (warning) an agent used after a git.clone but with no filesystem/git in availableTools
+#   - (warning) an agent used after a git.clone but with no filesystem/terminal tool in availableTools
 #   - every workflows/*.workflow.json parses; steps use only the 4 legal actions with unique ids;
 #     flow edges reference real step ids; params.agent names resolve to an agent file
 #   - MANIFEST.md exists
@@ -33,7 +33,9 @@ def warn(m): warnings.append(m)
 
 LEGAL_ACTIONS = {"git.clone", "repo.identify", "agent.run", "agent.session"}
 LEGAL_BASE = {"CodeReview","Custom","ProductManager","SeniorDeveloper","TechWriter","InternalRepoIdentify"}
-CODE_TOOLS = {"filesystem", "git"}  # built-in tools an agent needs to work on cloned code
+# built-in EnumTools that let an agent work on cloned code (filesystem + terminal)
+CODE_TOOLS = {"read_file","write_file","edit_file","append_file","delete_file",
+              "list_dir","create_directory","code_search","semantic_code_search","run_terminal_cmd"}
 
 # ---- skills ----
 skill_names = set()
@@ -121,7 +123,7 @@ for f in wf_files:
         err(f"{f}: definition has no triggers (use [{{\"event\":\"manual\"}}] as a placeholder)")
 
     # code-tool check: an agent step downstream of a git.clone works on cloned code,
-    # so its agent needs filesystem/git. Reachability over the flow graph, not prompt text.
+    # so its agent needs a filesystem/terminal tool. Reachability over the flow graph, not prompt text.
     adj = {}
     for e in d.get("flow") or []:
         adj.setdefault(e.get("from"), []).append(e.get("to"))
@@ -136,8 +138,8 @@ for f in wf_files:
             ag = (s.get("params") or {}).get("agent")
             if ag and ag in agent_names and not (agent_tools.get(ag, set()) & CODE_TOOLS):
                 warn(f"{f}: step '{s.get('id')}' runs after a git.clone but its agent '{ag}' has no "
-                     f"filesystem/git in availableTools - it cannot access the cloned code. Add the "
-                     f"built-in tools it needs.")
+                     f"filesystem/terminal tool in availableTools (read_file, edit_file, code_search, "
+                     f"run_terminal_cmd, ...) - it cannot access the cloned code. Add the tools it needs.")
 
 # ---- manifest ----
 if not os.path.isfile(os.path.join(out, "MANIFEST.md")):

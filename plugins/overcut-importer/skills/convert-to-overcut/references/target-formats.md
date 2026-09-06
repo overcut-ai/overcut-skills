@@ -43,7 +43,7 @@ An Overcut Agent is a configured LLM persona used inside workflow steps. Emit on
 
 **Specialize - one agent, one responsibility.** Model agents on the playbooks: each has a single sharp persona (a reviewer, an implementer, a doc writer, a triager), not a generalist that does everything. If a source agent wears several hats, split it into focused agents. Give each agent only the skills its job uses, and only the `availableTools` / `mcpServers` / `secrets` that responsibility requires - a reviewer that just comments needs less than an implementer that writes code.
 
-**Give code agents their tools.** A Custom agent has **no** built-in tools by default (`availableTools: []` = it can touch nothing). If an agent's step runs after a `git.clone` it works on code, so populate `filesystem`/`git` - don't leave it empty just because the source declared no tool list. Record it as a MANIFEST TODO. See `integration-mapping.md` § "Assign built-in tools to code agents"; the validator warns when a post-clone agent has neither.
+**Give code agents their tools.** A Custom agent has **no** tools by default (`availableTools: []` = it can touch nothing). If an agent's step runs after a `git.clone` it works on code, so populate the filesystem/terminal tools it uses (`read_file`, `edit_file`, `list_dir`, `code_search`, `run_terminal_cmd`, …) - don't leave it empty just because the source declared no tool list. Record it as a MANIFEST TODO. `availableTools` holds built-in tool identifiers only; PR/ticket/channel actions are built-in tools too (not MCP). See `integration-mapping.md` for the categories and the authoritative [Agent tools reference](https://docs.overcut.ai/docs/reference/tools#agent-tools-reference); the validator warns when a post-clone agent has no filesystem/terminal tool.
 
 **Output:** `out/agents/<kebab-name>.agent.json`
 
@@ -55,14 +55,14 @@ An Overcut Agent is a configured LLM persona used inside workflow steps. Emit on
   "modelKey": "<workspace-default>",
   "additionalInstructions": "You are a senior reviewer for the billing domain. <distilled system prompt>",
   "color": "#4F46E5",
-  "availableTools": ["filesystem", "git"],
+  "availableTools": ["read_file", "code_search", "read_pull_request", "get_pull_request_diff", "add_comment_to_pull_request"],
   "skills": ["billing-review-checklist"],
-  "mcpServers": [
-    { "catalogKey": "github", "allowedTools": ["create_pr_comment"], "confidence": "high" }
-  ],
-  "secrets": ["GITHUB_TOKEN"]
+  "mcpServers": [],
+  "secrets": []
 }
 ```
+
+(PRs are a first-class provider, so the reviewer uses built-in `*_pull_request` tools - no MCP, no secret. `mcpServers` is only for providers the built-in catalog doesn't cover, e.g. `{ "catalogKey": "notion", "allowedTools": ["search"], "confidence": "high" }` with a `secrets` entry.)
 
 Field reference:
 
@@ -74,7 +74,7 @@ Field reference:
 | `modelKey` | string | A key from the workspace LLM registry. Placeholder `"<workspace-default>"`. |
 | `additionalInstructions` | string | The agent's **system prompt** - the distilled role/goal/behavior. This is where most business logic lands. |
 | `color` | string | Hex color for the UI. Any valid hex; pick a stable one per agent. |
-| `availableTools` | string[] | **Built-in** tool names only (e.g. `filesystem`, `git`). NOT MCP tools. See `integration-mapping.md`. |
+| `availableTools` | string[] | **Built-in** `EnumTools` names only (e.g. `read_file`, `run_terminal_cmd`, `create_pull_request`). No `filesystem`/`git`/bare provider names, and NOT MCP tools. See the catalog in `integration-mapping.md`. |
 | `skills` | string[] | `name`s of skills (from `out/skills/`) to attach. Assigned via `assignSkillsToAgent`. |
 | `mcpServers` | object[] | Recommendations, not live config: `{ catalogKey, allowedTools, confidence }`. Assigned via `assignMcpServersToAgent` after the server exists. |
 | `secrets` | string[] | Secret **names** the agent needs. The user creates them; assigned by id via `setAgentSecrets`. Never a value. |

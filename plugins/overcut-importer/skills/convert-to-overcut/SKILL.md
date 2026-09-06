@@ -57,7 +57,7 @@ Load them as you need them - do not guess formats.
 
 - `references/target-formats.md` - the **exact output shapes** for an Overcut Skill, Agent, and Workflow definition, derived from the Overcut data model. This is your compile target.
 - `references/source-frameworks.md` - how to **recognize** each source framework and **map** its constructs to Overcut. Covers Argo/CronWorkflow, kagents, LangGraph, CrewAI, AutoGen, n8n, GitHub Actions, and a generic fallback for anything else.
-- `references/integration-mapping.md` - map external tool/integration calls (Slack, GitHub, Jira, HTTP, databases, filesystem, git) to Overcut **built-in tools, MCP servers, and secrets**.
+- `references/integration-mapping.md` - map external tool/integration calls (files, shell/git, GitHub/GitLab, Jira/Linear, Slack, HTTP, databases) to Overcut **built-in tools** (identifiers from the Agent tools reference), workflow step actions, MCP servers, and secrets.
 - `references/output-layout.md` - the `out/` directory layout and the `MANIFEST.md` spec.
 
 ## Procedure
@@ -89,7 +89,7 @@ Understanding the customer's intent is the hardest and most valuable work here -
 Using `references/target-formats.md` and `references/source-frameworks.md`:
 
 - **Skills** - preserve the source instruction bundles as `SKILL.md` folders. Split oversized or multi-topic ones into focused skills; strip only old-runtime references and framework wiring; **never drop business content**.
-- **Agents** - one specialized persona per responsibility. Distill the role/goal/system-prompt into `additionalInstructions`, but split a multi-role source agent into several focused agents. Attach only the skills that agent uses, and only the `availableTools` / `mcpServers` / `secrets` its job requires. A Custom agent starts with **no** tools, so give any agent that runs after a `git.clone` `filesystem`/`git` - don't leave a code agent at `availableTools: []`. See `references/integration-mapping.md` § "Assign built-in tools to code agents".
+- **Agents** - one specialized persona per responsibility. Distill the role/goal/system-prompt into `additionalInstructions`, but split a multi-role source agent into several focused agents. Attach only the skills that agent uses, and only the `availableTools` / `mcpServers` / `secrets` its job requires. `availableTools` are built-in `EnumTools` names (`read_file`, `run_terminal_cmd`, `create_pull_request`, …) - a Custom agent starts with **none**, so give any agent that runs after a `git.clone` the filesystem/terminal tools it uses; don't leave a code agent at `availableTools: []`. See `references/integration-mapping.md` for the catalog.
 - **Workflows** - decompose the customer's goal into **dedicated workflows** (one outcome/trigger each), each modeled on the nearest playbook. Steps use `action` = `git.clone` / `repo.identify` / `agent.run` / `agent.session`; `flow` encodes order; `triggers` come from the source events.
 
 **Integrations** (external tool calls): best-effort auto-map to Overcut built-in tools or a known MCP catalog entry per `references/integration-mapping.md`. When you can map with confidence, wire it in. When you cannot, do **not** fabricate config - record it as a TODO in the `MANIFEST.md`.

@@ -51,7 +51,7 @@ A bullet list of everything intentionally not carried over, each with a one-line
 ### 4. TODOs
 The action list, grouped. Every placeholder and every low-confidence decision lands here:
 - **Placeholders to fill** - each `<workspace-default>` model, each inferred/defaulted `baseAgentType`, each manual-trigger placeholder.
-- **Integrations to wire** - per agent: which MCP server + secret to assign (from `integration-mapping.md`), including low-confidence ones the converter refused to guess.
+- **Integrations to wire** - per agent: built-in provider tools to confirm (PRs/tickets/channels need the provider connected to the project), and any MCP server + secret to assign (from `integration-mapping.md`), including low-confidence ones the converter refused to guess.
 - **Built-in tools for code agents** - any `availableTools` (`filesystem`/`git`) the converter added because the agent runs after a `git.clone`; the reviewer confirms them.
 - **Secrets to create** - by name, never value. Flag any hardcoded credential found in the source (to create + rotate).
 - **Trigger conditions to narrow** - any `conditions: { "TODO": ... }`.
