@@ -4,23 +4,23 @@ Source frameworks call external tools (files, shell, git, GitHub/GitLab, Jira/Li
 
 ## The three Overcut capability surfaces
 
-1. **Built-in agent tools** - native tool identifiers (snake_case) on an agent's `availableTools`, e.g. `read_file`, `run_terminal_cmd`, `create_pull_request`. They cover filesystem/code, the terminal, and the first-class providers (pull requests, tickets, chat channels, CI). They need **no MCP server and no secret** - the provider is connected at the project level (a repository, a git/ticket org, a Slack workspace). The authoritative, always-current list is the [Agent tools reference](https://docs.overcut.ai/docs/reference/tools#agent-tools-reference) - take identifiers from there, never from memory.
-2. **Workflow step actions** - repo access is a *workflow step*, not an agent tool: `git.clone` / `repo.identify`. These are step `action`s in the workflow definition, never values in `availableTools`. An agent only sees code if a clone step ran before its step.
+1. **Built-in agent tools** - native tool identifiers (snake_case) on an agent's `availableTools`, e.g. `read_file`, `run_terminal_cmd`, `create_pull_request`. They cover filesystem/code, the terminal, and the first-class providers (pull requests, tickets, chat channels, CI). They need **no MCP server and no secret** - the provider is connected at the project level (a repository, a git/ticket org, a Slack workspace). The authoritative, always-current list is the [Agent Tools Reference](https://docs.overcut.ai/docs/reference/tools) - take identifiers from there, never from memory.
+2. **Workflow step actions** - some capabilities are *workflow steps*, not agent tools: `git.clone` / `repo.identify` (get a repo into the workspace), `script.run` (a deterministic shell command), `ci.executeWorkflow` (kick an external CI pipeline). These are step `action`s in the workflow definition, never values in `availableTools`. A clone step only makes the repo present; the agent still needs filesystem/terminal tools in `availableTools` to read or change it.
 3. **MCP servers** - for external providers **without** a first-class built-in tool (Notion, Figma, Grafana, PostHog, Brave Search, Playwright, a custom HTTP/DB server). Installed in the project, assigned to an agent, gated by `allowedTools`; most need a **secret**. In output these are *recommendations* (`{ catalogKey, allowedTools, confidence }`) plus `secrets[]` by name - the user installs/assigns them later.
 
-> **GitHub, GitLab, Jira, Linear, and Slack are NOT MCP.** Their actions are first-class built-in tools (`create_pull_request`, `read_ticket`, `post_channel_message`, …). Reserve MCP for providers the built-in catalog doesn't cover.
+> **GitHub, GitLab, Jira, Linear, and Slack are NOT MCP.** Their actions are first-class built-in tools (`create_pull_request`, `read_ticket`, `post_channel_message`, ...). Reserve MCP for providers the built-in catalog doesn't cover.
 
 ## Built-in tool categories (orientation - not the full list)
 
-Take identifiers from the [Agent tools reference](https://docs.overcut.ai/docs/reference/tools#agent-tools-reference) - it is the source of truth and grows as Overcut adds tools. Don't hardcode this list into your output; use it to recognize which *category* a source call maps to, then copy the exact identifiers from the reference. The categories, with a couple of examples each:
+Take identifiers from the [Agent Tools Reference](https://docs.overcut.ai/docs/reference/tools) - it is the source of truth and grows as Overcut adds tools. Don't hardcode this list into your output; use it to recognize which *category* a source call maps to, then copy the exact identifiers from the reference. The categories, with a couple of examples each:
 
 - **Filesystem** - `read_file`, `edit_file`, `list_dir` (also `write_file`, `append_file`, `delete_file`, `create_directory`)
 - **Code** - `code_search`, `semantic_code_search`, `run_terminal_cmd`, `explore_codebase`
-- **Tickets** - `read_ticket`, `create_ticket`, `add_comment_to_ticket`, `list_tickets`, …
-- **Pull requests** - `create_pull_request`, `read_pull_request`, `add_comment_to_pull_request`, `merge_pull_request`, …
-- **Code review** - `get_pull_request_diff`, `submit_review`, `add_pull_request_review_thread`, …
-- **CI/CD** - `list_pr_ci_runs`, `get_ci_run_logs`, `retry_ci_workflow`, …
-- **Chat channels** - `post_channel_message`, `read_channel_messages`, `add_channel_message_reaction`, …
+- **Tickets** - `read_ticket`, `create_ticket`, `add_comment_to_ticket`, `list_tickets`, ...
+- **Pull requests** - `create_pull_request`, `read_pull_request`, `add_comment_to_pull_request`, `merge_pull_request`, ...
+- **Code review** - `get_pull_request_diff`, `submit_review`, `add_pull_request_review_thread`, ...
+- **CI/CD** - `list_pr_ci_runs`, `get_ci_run_logs`, `retry_ci_workflow`, ...
+- **Chat channels** - `post_channel_message`, `read_channel_messages`, `add_channel_message_reaction`, ...
 - **Scratchpad / memory** (auto-injected) - `write_scratchpad`, `read_scratchpad`, `memory_write`, `memory_recall`, `update_status`
 
 There is **no** `filesystem` or `git` tool - git runs through `run_terminal_cmd`. Emit only real identifiers from the reference; if a needed capability isn't there, record a TODO rather than inventing a name.
@@ -31,19 +31,21 @@ There is **no** `filesystem` or `git` tool - git runs through `run_terminal_cmd`
 |---|---|---|
 | read/write/list local files, workspace paths | `availableTools`: `read_file` / `write_file` / `edit_file` / `append_file` / `list_dir` / `create_directory` / `delete_file` as used | no |
 | search code / grep / semantic search | `availableTools`: `code_search`, `semantic_code_search` | no |
-| shell / exec, running git, tests, lint, build | `availableTools`: `run_terminal_cmd` **and** a `git.clone` step upstream when it touches the repo | no (uses the connected repo) |
+| shell / exec that needs judgment (the agent decides what to run: git, tests, lint, build) | `availableTools`: `run_terminal_cmd` **and** a `git.clone` step upstream when it touches the repo | no (uses the connected repo) |
+| a fixed script/command with no LLM judgment (a container `command`, a CI `run:` block) | a `script.run` **step action** (`params.script`, `cwd` = the cloned folder) - not an agent tool | no |
+| trigger an external CI pipeline and wait for it | a `ci.executeWorkflow` **step action** | no (CI provider connected) |
 | clone/checkout a repo | `git.clone` **step action** (+ `repo.identify` if the repo comes from the trigger) | no |
 | open/read/comment/create/merge PRs, reviews (GitHub/GitLab/Bitbucket) | `availableTools`: the `*_pull_request` / `submit_review` / `*_review_thread*` tools used | no (repo connected to the project) |
 | Jira / Linear / ClickUp issues | `availableTools`: `read_ticket`, `add_comment_to_ticket`, `get_ticket_metadata`, `get_ticket_attachments` | no (ticket org connected) |
-| Slack post/notify/read channel | `availableTools`: `post_channel_message`, `read_channel_messages`, `add_channel_message_reaction` | no (Slack connected) — MCP `slack` only if the built-ins don't cover it |
+| Slack post/notify/read channel | `availableTools`: `post_channel_message`, `read_channel_messages`, `add_channel_message_reaction` | no (Slack connected) - MCP `slack` only if the built-ins don't cover it |
 | Notion / Figma / Grafana / PostHog / Brave / Playwright | MCP server for that provider (`allowedTools` scoped to what's used) | provider token |
 | generic HTTP request / REST call / webhook out | MCP `http`/`fetch` if the endpoint is known; else TODO | maybe (API key) |
 | incoming webhook that *starts* the flow | not a tool - a `custom_event` **trigger** (`customEvent.name` = webhook slug) | dispatcher-side |
 | Postgres / MySQL / Mongo / SQL query | MCP database server for that engine | connection secret |
 | vector DB / embeddings / RAG store | usually **drop** (retrieval plumbing) unless it encodes business data the agent must query → MCP + TODO | maybe |
 | email / SMS / PagerDuty / notifications | MCP if a catalog entry exists; else TODO | provider token |
-| cloud SDK (AWS/GCP/Azure), kubectl, docker | almost always **drop** (infra, not SDLC business logic) | — |
-| unknown / bespoke internal API | **do not guess** → TODO under Integrations | — |
+| cloud SDK (AWS/GCP/Azure), kubectl, docker | almost always **drop** (infra, not SDLC business logic) | - |
+| unknown / bespoke internal API | **do not guess** → TODO under Integrations | - |
 
 ## Give code agents their tools
 
@@ -72,4 +74,4 @@ Every secret is referenced by **name** in `secrets[]` and created by the user la
 
 ## `availableTools` vs MCP - the classic mixup
 
-`availableTools` holds **built-in** tool identifiers from the [Agent tools reference](https://docs.overcut.ai/docs/reference/tools#agent-tools-reference) (e.g. `read_file`, `run_terminal_cmd`, `create_pull_request`). It is **not** where MCP tools go. MCP tools arrive via an assigned MCP server and its `allowedTools`, and only for providers the built-in tools don't cover. Never put a bare provider name (`slack`, `github`, `git`, `filesystem`) into `availableTools` - those are not tool names.
+`availableTools` holds **built-in** tool identifiers from the [Agent Tools Reference](https://docs.overcut.ai/docs/reference/tools) (e.g. `read_file`, `run_terminal_cmd`, `create_pull_request`). It is **not** where MCP tools go. MCP tools arrive via an assigned MCP server and its `allowedTools`, and only for providers the built-in tools don't cover. Never put a bare provider name (`slack`, `github`, `git`, `filesystem`) into `availableTools` - those are not tool names.

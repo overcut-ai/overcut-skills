@@ -1,25 +1,44 @@
 {
-  "name": "<kebab-case-name>",
-  "definition": {
+  "_formatVersion": "1.0.0",
+  "workflow": {
     "name": "<kebab-case-name>",
-    "priority": 50,
-    "timeoutMs": 1800000,
-    "statusUpdateMethod": "comment",
-    "defaultModelKey": "<workspace-default>",
-    "triggers": [
-      { "event": "manual" }
-    ],
-    "steps": [
-      {
-        "id": "step-1",
-        "name": "<step name>",
-        "action": "agent.run",
-        "instruction": "<what this agent should do, framework-free>",
-        "params": { "agent": "<agent-name>" },
-        "stepMaxDurationMinutes": 20
-      }
-    ],
-    "flow": []
+    "definition": {
+      "name": "<kebab-case-name>",
+      "priority": 5,
+      "timeoutMs": 1800000,
+      "statusUpdateMethod": "comment",
+      "triggers": [
+        {
+          "event": "manual",
+          "slashCommand": { "command": "<kebab-case-name>", "requireMention": false }
+        }
+      ],
+      "steps": [
+        {
+          "id": "clone",
+          "name": "Clone repository",
+          "action": "git.clone",
+          "params": { "repoFullName": "{{trigger.repository.fullName}}", "cloneOptions": { "depth": 1 } },
+          "stepMaxDurationMinutes": 10
+        },
+        {
+          "id": "step-1",
+          "name": "<step name>",
+          "action": "agent.run",
+          "instruction": "<what this agent should do, framework-free>",
+          "params": { "agentId": "<agent-name>-agent-id" },
+          "stepMaxDurationMinutes": 20
+        }
+      ],
+      "flow": [
+        { "from": "", "to": "clone" },
+        { "from": "clone", "to": "step-1" }
+      ]
+    }
   },
-  "agentRefs": {}
+  "refs": {
+    "agents": [
+      { "id": "<agent-name>-agent-id", "name": "<agent-name>" }
+    ]
+  }
 }

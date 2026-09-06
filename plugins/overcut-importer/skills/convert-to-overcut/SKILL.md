@@ -48,7 +48,7 @@ Keep the durable orchestration intent: *when* something should happen (triggers)
 
 Overcut ships **playbooks** - pre-built, best-practice workflow templates (PR review, issue triage, release, and more). They are the reference for how a good Overcut workflow and its agents are shaped: which trigger to choose, how granular the steps are, where `agent.run` vs `agent.session` fits, and how agents are specialized. When shaping agents and workflows, mirror the structure of the closest playbook rather than inventing a shape.
 
-- If the sibling **`overcut-api`** skill is installed and the user is connected, list them live - `playbooks { key title description trigger priority }` - then fetch `playbook(<key>)` for the full template and model your output on the nearest match.
+- If the sibling **`overcut-api`** skill is installed and the user is connected, list them live - `playbooks { key title description trigger priority }` - then fetch `playbook(key: <key>) { artifact }`. The `artifact` is exactly the `*.workflow.json` shape you emit (`_formatVersion` / `workflow` / `refs`), so copy its step, trigger, and `flow` structure for the nearest match.
 - Otherwise rely on the shapes in `references/target-formats.md`, which already encode the same patterns.
 
 ## Read these references before converting
@@ -89,17 +89,19 @@ Understanding the customer's intent is the hardest and most valuable work here -
 Using `references/target-formats.md` and `references/source-frameworks.md`:
 
 - **Skills** - preserve the source instruction bundles as `SKILL.md` folders. Split oversized or multi-topic ones into focused skills; strip only old-runtime references and framework wiring; **never drop business content**.
-- **Agents** - one specialized persona per responsibility. Distill the role/goal/system-prompt into `additionalInstructions`, but split a multi-role source agent into several focused agents. Attach only the skills that agent uses, and only the `availableTools` / `mcpServers` / `secrets` its job requires. `availableTools` are built-in `EnumTools` names (`read_file`, `run_terminal_cmd`, `create_pull_request`, …) - a Custom agent starts with **none**, so give any agent that runs after a `git.clone` the filesystem/terminal tools it uses; don't leave a code agent at `availableTools: []`. See `references/integration-mapping.md` for the catalog.
-- **Workflows** - decompose the customer's goal into **dedicated workflows** (one outcome/trigger each), each modeled on the nearest playbook. Steps use `action` = `git.clone` / `repo.identify` / `agent.run` / `agent.session`; `flow` encodes order; `triggers` come from the source events.
+- **Agents** - one specialized persona per responsibility. Distill the role/goal/system-prompt into `additionalInstructions`, but split a multi-role source agent into several focused agents. Attach only the skills that agent uses, and only the `availableTools` / `mcpServers` / `secrets` its job requires. `availableTools` are built-in `EnumTools` names (`read_file`, `run_terminal_cmd`, `create_pull_request`, ...) - a Custom agent starts with **none**. A `git.clone` step only places the repo in the workspace; the agent can read or change it only through its `availableTools`, so give any agent that runs after a `git.clone` the filesystem/terminal tools it uses and don't leave a code agent at `availableTools: []`. See `references/integration-mapping.md` for the catalog.
+- **Workflows** - decompose the customer's goal into **dedicated workflows** (one outcome/trigger each), each modeled on the nearest playbook, emitted as the `importWorkflow` artifact (`_formatVersion` + `workflow` + `refs`). Steps use `action` = `git.clone` / `repo.identify` / `agent.run` / `agent.session` / `script.run` / `ci.executeWorkflow`, each with the `params` shape in `references/target-formats.md`; agents are referenced by placeholder `agentId`s declared in `refs.agents`. `flow` is a **single linear chain** starting from `""` - Overcut has no parallel branches and no conditional edges, so fan-out or branching in the source becomes one `agent.session` step with several sub-agents, or separate workflows. `triggers` come from the source events.
 
 **Integrations** (external tool calls): best-effort auto-map to Overcut built-in tools or a known MCP catalog entry per `references/integration-mapping.md`. When you can map with confidence, wire it in. When you cannot, do **not** fabricate config - record it as a TODO in the `MANIFEST.md`.
 
-**Required-but-missing fields**: emit valid **placeholders** and flag each one as a TODO. Never silently guess. Standard placeholders:
+**Required-but-missing fields**: emit valid **placeholders** and flag each one as a TODO. Never silently guess. Standard placeholders (full table in `references/target-formats.md`):
 - `baseAgentType`: `Custom` unless the role name clearly implies another enum value.
-- `modelKey` / `defaultModelKey`: `"<workspace-default>"`.
-- `triggers`: a single manual trigger `[{ "event": "manual" }]` when the source has no clear event.
+- agent `modelKey`: `"<workspace-default>"` in the artifact; it must be swapped for a real key from `llmModels` at import time (the API requires a non-blank key). Workflow `defaultModelKey`: omit it.
+- `triggers`: a manual slash-command trigger `[{ "event": "manual", "slashCommand": { "command": "<workflow-name>", "requireMention": false } }]` when the source has no clear event. A bare `{ "event": "manual" }` is rejected by the API.
+- trigger `conditions`: omit when you can't express the filter as a `{ combinator, rules }` group - never emit a free-form note object.
+- `git.clone.repoFullName`: `{{trigger.repository.fullName}}` when the trigger carries a repo; otherwise a `repo.identify` step and `{{outputs.<its-id>}}`.
 
-The output must stay **importable** even with placeholders in it.
+The output must stay **importable** even with placeholders in it - the only exception is the agent `modelKey`, which the import step resolves.
 
 ### 4. Emit the output folder
 
@@ -115,17 +117,17 @@ Run the checker before declaring done:
 scripts/validate-output.sh <out-dir>
 ```
 
-It verifies JSON parses, every `SKILL.md` has valid frontmatter (`name`, `description`), agents carry the required fields with a legal `baseAgentType`, and workflow steps use only the four legal `action` values with a `flow` that references real step ids. Fix anything it flags.
+It verifies JSON parses, every `SKILL.md` has valid frontmatter (`name`, `description`), agents carry the required fields with a legal `baseAgentType`, and each workflow is a valid import artifact: legal `action` values with the right `params` (`agentId` / `agentIds` + `goal` / `repoFullName` / `script`), required `name` and `instruction`, a linear `flow` starting from `""`, legal trigger events with the blocks they require (`slashCommand` on `manual`, `schedule` on `scheduled`, `customEvent` on `custom_event`), and `refs.agents` that resolve to agent files. Fix anything it flags.
 
 ### 6. Review, then optionally import
 
 Summarize for the user: what was produced, the mapping at a glance, and the open TODOs. Do **not** import automatically.
 
-If the user then wants to push it into a live Overcut project, hand off to the **`overcut-api` skill** (in the sibling `overcut` plugin - it must be installed). Because Overcut Skills load from a **git repo** (`createSkill` points at a `path` + `ref`), the import order is:
+If the user then wants to push it into a live Overcut project, hand off to the **`overcut-api` skill** (in the sibling `overcut` plugin - it must be installed). Because Overcut Skills load from a **git repo** (`createSkill` points at a repository + `path` + `ref`), the import order is:
 
-1. Commit the `out/skills/` folders into a repo connected to the project; `createSkill` (or `createSkills`) pointing at each `path`.
-2. `createAgent` per `*.agent.json`; then `assignSkillsToAgent`, `assignMcpServersToAgent`, `setAgentSecrets` for its links.
-3. `createWorkflow` (or `importWorkflow` with `agentMapping`) per `*.workflow.json`. This edits the **draft** - the user commits it live via `commitWorkflow` after reviewing in the UI.
+1. Commit the `out/skills/` folders into a repo connected to the project. `browseSkillsInRepo` shows what Overcut discovers; then `createSkill` (or `createSkills`) per folder with `repositoryId`, `slug` (the folder name), `path`, `ref`, `name`, `description`.
+2. Resolve each agent's `modelKey` from `llmModels`, then `createAgent` per `*.agent.json` passing `skillIds` (and `mcpServerIds` once the servers exist); `setAgentSecrets` for its secrets.
+3. `importWorkflow(file: <the .workflow.json>, name, projectId, agentMapping: [{ from: <refs.agents[].id placeholder>, to: <created agent id> }])` per `*.workflow.json`. This creates the workflow as a **draft** - the user commits it live via `commitWorkflow` after reviewing in the UI.
 
 Never create secret values, `commitWorkflow`, or trigger runs without explicit user confirmation - the safety rules in the `overcut-api` skill's `references/mutations.md` apply.
 
