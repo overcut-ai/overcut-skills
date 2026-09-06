@@ -35,13 +35,15 @@ The manifest is the contract with the reviewer. It must let them answer "is this
 One paragraph: source frameworks detected, counts produced (`N skills, M agents, K workflows`), and the headline open items.
 
 ### 2. Source → target mapping
-A table, one row per meaningful source construct:
+A table, one row per meaningful source construct. One source can map to **several** targets - a split skill or a decomposed graph produces multiple rows; make the split explicit so the reviewer can confirm nothing was lost:
 
 | Source (file · construct) | Overcut artifact | Notes |
 |---|---|---|
 | `pipeline.yaml` · dag task `review` | workflow `billing-pr-review` step `review` (`agent.run`) | — |
-| `agents/reviewer.yaml` · kagent | agent `billing-pr-reviewer` (`CodeReview`) | baseAgentType inferred |
-| `checklists/billing.md` | skill `billing-review-checklist` | shared by 2 agents |
+| `pipeline.yaml` · full graph | workflows `billing-pr-review` + `release-cut` | decomposed into 2 dedicated per-goal workflows |
+| `agents/all-in-one.yaml` · kagent | agents `billing-pr-reviewer` (`CodeReview`) + `billing-implementer` (`SeniorDeveloper`) | split one multi-role agent into specialized agents |
+| `handbook.md` (2,000 lines) | skills `pr-review-checklist` + `coding-standards` + `release-playbook` | split oversized skill; content preserved, none dropped |
+| `checklists/billing.md` | skill `billing-review-checklist` | attached only to the reviewer agent |
 
 ### 3. Dropped as plumbing
 A bullet list of everything intentionally not carried over, each with a one-line reason (k8s specs, retries, build steps, state backends…). This is how the reviewer confirms nothing important was lost. **Always populate it** - "dropped nothing" is itself a claim worth stating.
@@ -49,7 +51,8 @@ A bullet list of everything intentionally not carried over, each with a one-line
 ### 4. TODOs
 The action list, grouped. Every placeholder and every low-confidence decision lands here:
 - **Placeholders to fill** - each `<workspace-default>` model, each inferred/defaulted `baseAgentType`, each manual-trigger placeholder.
-- **Integrations to wire** - per agent: which MCP server + secret to assign (from `integration-mapping.md`), including low-confidence ones the converter refused to guess.
+- **Integrations to wire** - per agent: built-in provider tools to confirm (PRs/tickets/channels need the provider connected to the project), and any MCP server + secret to assign (from `integration-mapping.md`), including low-confidence ones the converter refused to guess.
+- **Built-in tools for code agents** - any `availableTools` (`filesystem`/`git`) the converter added because the agent runs after a `git.clone`; the reviewer confirms them.
 - **Secrets to create** - by name, never value. Flag any hardcoded credential found in the source (to create + rotate).
 - **Trigger conditions to narrow** - any `conditions: { "TODO": ... }`.
 
