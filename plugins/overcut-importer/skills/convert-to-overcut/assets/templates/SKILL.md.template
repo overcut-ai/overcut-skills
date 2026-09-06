@@ -2,24 +2,13 @@
 name: <kebab-case-name>
 description: <one line, third person - what it does AND when to use it>
 license: Apache-2.0
-# allowed-tools: Read, Bash   # optional; only if the skill body needs specific built-in tools
 ---
 
 # <Human Title>
 
-<Distilled, framework-free guidance the organization wants applied: the checklist,
-standard, or playbook. Write it as instructions to an agent. Do NOT mention Argo,
-kagents, LangGraph, CrewAI, k8s, or any source-framework machinery.>
-
-## When to apply
-
-<the situations this skill is relevant to>
-
-## What to do
-
-- <step / criterion 1>
-- <step / criterion 2>
-
-## Definition of done
-
-<how the agent knows the work meets the org's bar>
+<The organization's own instructions, preserved as they wrote them: the checklist,
+standard, or playbook. Do NOT summarize, reorder, or reword. The only edits: remove
+references to the old runtime ("return to the supervisor", "emit to the queue") and
+framework wiring (Argo, kagents, LangGraph, CrewAI, k8s) that would mislead an agent.
+Keep every business rule. If the source is long or multi-topic, split it into several
+focused skills rather than trimming it.>
