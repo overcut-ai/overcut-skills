@@ -289,6 +289,88 @@ query ($pid: String!) {
 
 ---
 
+## Context parameters (`{{params.<key>}}` values)
+
+```graphql
+# Definitions visible to a project: workspace-level ones plus the project's own.
+# Omit `where` to list every definition in the workspace.
+query ($pid: String!) {
+  contextParameters(where: { projectId: $pid }) {
+    id key description
+    defaultValue          # null = no default: a run referencing the key with no override fails at preparation
+    projectId projectName # null projectId = workspace-level
+    overrideCount
+  }
+}
+# contextParameter(id) adds `values { id scope scopeId scopeName value updatedAt updatedBy }` - every override of one key
+```
+
+```graphql
+# What one entity resolves to, key by key, and who overrides it.
+# scope: PROJECT | REPOSITORY | WORKFLOW | ORCHESTRATION | AGENT; scopeId = that entity's id
+query ($scope: EnumContextParameterScope!, $id: String!) {
+  contextParameterEffectiveValues(scope: $scope, scopeId: $id) {
+    parameter { id key defaultValue }
+    localValue                                   # this entity's own override, null = inherits
+    inheritedValue                               # what it gets if it sets nothing
+    inheritedFrom { label scope scopeId name }   # null when it is the definition default
+    overriddenBy { label scope scopeId name }    # more specific scopes that already win for runs including this entity
+  }
+}
+# contextParameterValues(scope, scopeId) returns only the overrides the entity itself holds
+```
+
+```graphql
+# Will this workflow's runs resolve every key it references? Same check the Playground shows.
+# Manual-run path only (project, repository, workflow) - orchestration and agent overrides do not appear.
+query ($wid: String!, $rid: String) {
+  contextParameterResolutionPreview(workflowId: $wid, repositoryId: $rid, useWorkingDraft: true) {
+    key
+    status          # Resolved | Unresolved (no value on the path, no default) | Unknown (key not defined)
+    value
+    source { label scope scopeId name }
+  }
+}
+```
+
+Run this before `commitWorkflow` on any draft that references `{{params.*}}`: commit rejects `Unknown` keys, and `Unresolved` keys fail every run at preparation (`statusReason: ContextParameterUnresolved`). A run's resolved map is on the run itself: `workflowRun { resolvedContextParameters }` gives `{ run: { key: value }, agents: { agentId: { key: value } } }`.
+
+---
+
+## Workspace library (shared items and templates)
+
+```graphql
+# The one library project of the workspace (created on first access). Its id is the
+# `projectId` you pass to every project-scoped list query to see shared items.
+query { libraryProject { id name kind } }     # kind: Library; standard projects are kind: Standard
+```
+
+```graphql
+# Then reuse the normal project-scoped queries with the library id:
+query ($lib: String!) {
+  workflows(where: { projectId: { equals: $lib } }) { id name currentVersionId }   # templates
+  agents(where: { projectId: { equals: $lib } }) { id name }                       # shared by reference
+  mcpServers(projectId: $lib, activeOnly: false) { id name }
+  skills(projectId: $lib, activeOnly: false) { id name }
+  projectSecrets(projectId: $lib) { id name hasValue availableForAllExecutions }
+}
+```
+
+```graphql
+# What a template references, before installing it. `committed: true` shows exactly what
+# installLibraryWorkflow will copy (it always copies the last committed version) and
+# fails when the template was never committed.
+query ($id: String!) {
+  exportWorkflow(where: { id: $id }, committed: true) { fileName json }
+}
+# json = { _formatVersion, workflow: { name, definition }, refs: { agents: [{ id, name }] } }
+# exportOrchestration(where, committed: true) -> refs.workflows lists every workflow the template routes to
+```
+
+Reading rules: a template is never active and never runs; `installLibraryWorkflow` / `installLibraryOrchestration` (see `mutations.md`) copy it into a *standard* project. A library agent referenced by a template needs no mapping on install; a project-owned agent does. See `concepts.md` for the by-reference vs by-copy split.
+
+---
+
 ## Playbooks (importable workflow templates)
 
 ```graphql

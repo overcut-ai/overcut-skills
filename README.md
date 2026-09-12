@@ -22,7 +22,7 @@ Once installed, invoke a skill by name (however your tool surfaces skills - e.g.
 
 | Plugin | Skill | What it does |
 |--------|-------|--------------|
-| `overcut` | `overcut-api` | Connect to the Overcut GraphQL API with a personal token to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, secrets, repositories, and playbooks. |
+| `overcut` | `overcut-api` | Connect to the Overcut GraphQL API with a personal token to explore and manage workspaces, projects, workflows, agents, skills, MCP servers, runs, secrets, context parameters, the workspace library, repositories, and playbooks. |
 | `overcut-importer` | `convert-to-overcut` | Convert an existing agent/automation framework (Argo Workflows, kagents, LangGraph, CrewAI, AutoGen, n8n, GitHub Actions, or an arbitrary skills/prompts folder) into Overcut-ready Skills, Agents, and Workflow definitions. Distills the SDLC business logic, drops framework plumbing, and writes a reviewable `out/` folder with a `MANIFEST.md`. Optionally hands off to `overcut-api` to import into a live project. |
 
 ## Authentication
