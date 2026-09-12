@@ -25,6 +25,9 @@
 #     - priority 1-100; timeoutMs >= 30000; statusUpdateMethod legal (not "none")
 #     - refs.agents[].name resolve to an agent file
 #     - (warning) an agent used after a git.clone with no filesystem/terminal tool in availableTools
+#   context parameters (agents/*.agent.json contextParameters[], workflows refs.contextParameters[])
+#     - declared keys are well-formed (error); (warning) key looks like a credential, no description
+#     - (warning) every {{params.<key>}} referenced in additionalInstructions / the definition is declared
 #   MANIFEST.md exists
 #
 # Exit non-zero if any error is found. Warnings do not fail the run.
@@ -67,6 +70,45 @@ SKILL_FM_KEYS = {"name", "description", "license"}
 # built-in EnumTools that let an agent work on cloned code (filesystem + terminal)
 CODE_TOOLS = {"read_file","write_file","edit_file","append_file","delete_file",
               "list_dir","create_directory","code_search","semantic_code_search","run_terminal_cmd"}
+PARAM_REF = re.compile(r"\{\{\{?\s*params\.([A-Za-z0-9_]+)")
+PARAM_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+SECRETY = re.compile(r"(token|secret|password|passwd|api_?key|private_?key|credential)", re.I)
+
+def check_context_parameters(f, where, declared_list, texts):
+    """Declared keys (`where` names the list: contextParameters / refs.contextParameters) are
+    well-formed and not credential-shaped; every {{params.x}} in `texts` is declared on this artifact."""
+    declared = set()
+    if declared_list is not None and not isinstance(declared_list, list):
+        err(f"{f}: {where} must be an array of {{ key, description, default? }}"); declared_list = []
+    for i, p in enumerate(declared_list or []):
+        if not isinstance(p, dict) or not p.get("key"):
+            err(f"{f}: {where}[{i}] needs a 'key'"); continue
+        key = p["key"]
+        if not PARAM_KEY.match(key):
+            err(f"{f}: context parameter key '{key}' must match ^[A-Za-z_][A-Za-z0-9_]*$ (max 64 chars)")
+        if not p.get("description"):
+            warn(f"{f}: context parameter '{key}' has no description")
+        if SECRETY.search(key):
+            warn(f"{f}: context parameter '{key}' looks like a credential - parameters are plain text in prompts and logs; use secrets[] instead")
+        declared.add(key)
+    referenced = set()
+    for t in texts:
+        if isinstance(t, str):
+            referenced.update(PARAM_REF.findall(t))
+    for key in sorted(referenced - declared):
+        warn(f"{f}: references {{{{params.{key}}}}} but does not declare it in {where} (createAgent / commitWorkflow reject undefined keys)")
+    for key in sorted(declared - referenced):
+        warn(f"{f}: declares context parameter '{key}' that nothing in this artifact references")
+
+def walk_strings(node):
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from walk_strings(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from walk_strings(v)
 
 # ---- skills ----
 skill_names = set()
@@ -120,6 +162,7 @@ for f in sorted(glob.glob(os.path.join(out, "agents", "*.agent.json"))):
     for bad in ("filesystem", "git", "slack", "github", "jira"):
         if bad in (doc.get("availableTools") or []):
             err(f"{f}: '{bad}' is not a built-in tool identifier (see the Agent Tools Reference)")
+    check_context_parameters(f, "contextParameters", doc.get("contextParameters"), [doc.get("additionalInstructions")])
 
 for f, doc in agent_docs.items():
     for sk in doc.get("skills", []) or []:
@@ -347,6 +390,8 @@ for f in wf_files:
                     warn(f"{f}: step '{sid}' runs after a git.clone but its agent '{ag}' has no "
                          f"filesystem/terminal tool in availableTools (read_file, edit_file, code_search, "
                          f"run_terminal_cmd, ...) - it cannot access the cloned code. Add the tools it needs.")
+
+    check_context_parameters(f, "refs.contextParameters", refs.get("contextParameters"), list(walk_strings(d)))
 
 # ---- manifest ----
 if not os.path.isfile(os.path.join(out, "MANIFEST.md")):

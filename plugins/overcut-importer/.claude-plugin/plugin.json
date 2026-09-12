@@ -1,7 +1,7 @@
 {
   "name": "overcut-importer",
   "description": "Convert existing agent/automation frameworks (Argo Workflows, kagents, LangGraph, CrewAI, AutoGen, n8n, GitHub Actions, or arbitrary skill/prompt folders) into Overcut-ready Skills, Agents, and Workflow definitions that import cleanly into an Overcut project.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "Overcut",
     "email": "team@overcut.ai"

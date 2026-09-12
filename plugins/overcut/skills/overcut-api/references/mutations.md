@@ -26,13 +26,14 @@ scripts/overcut-gql.sh -f mutation.graphql -v '{"id":"..."}'
 
 ---
 
-## Two safety rules (non-negotiable)
+## Three safety rules (non-negotiable)
 
 1. **Workflow draft vs committed.** `updateWorkflow` / `importWorkflow` change the *draft*. Production keeps running the last *committed* version until `commitWorkflow`. So:
    - Never `commitWorkflow` silently - production traffic moves to the new version immediately. Show the user what changed and get explicit go-ahead.
    - Never `discardWorkflowChanges` without confirmation - it permanently throws away draft edits.
    - `restoreWorkflowVersion` only updates the draft; the user must `commitWorkflow` to make an old version live again.
 2. **Secrets by reference only.** Assign/unassign secrets by id. Never read, request, or echo a secret value. `createProjectSecret` takes a value once at creation - only send a value the user explicitly provided.
+3. **Context parameters are plain text, and commit validates them.** Never store a credential in `setContextParameterValue` / `createContextParameter` - values land in rendered prompts and run logs. Before `commitWorkflow` on a draft that references `{{params.<key>}}`, run `contextParameterResolutionPreview(workflowId, useWorkingDraft: true)` (`queries.md`): commit rejects undefined keys outright, and an `Unresolved` key makes every run fail at preparation. `createAgent` / `updateAgent` validate `additionalInstructions` the same way, immediately.
 
 ---
 
@@ -174,6 +175,56 @@ mutation ($aid: String!, $skills: [String!]!) {
 Constraints: `name` must match `^[A-Z][A-Z0-9_]+$`; `value` max 10KB. `deleteProjectSecret` returns a bare Boolean (no subfields).
 
 **Placeholder flow - the way to wire secrets without the value ever entering the conversation:** create the secret with `value: ""`, have the user paste the real value in the web UI (Project -> Secrets), and verify readiness via `hasValue` / `updatedAt` - never by asking for the value. If a config embeds the secret in a larger string (e.g. an `Authorization` header), decide up front whether the secret holds the full string or just the credential, and tell the user exactly which format to paste - a mismatch (e.g. a bearer token saved without its `Bearer ` prefix) fails only at run time as an auth error.
+
+---
+
+## Context parameters
+
+| Mutation | Args | Notes |
+|---|---|---|
+| `createContextParameter` | `input: CreateContextParameterInput!` | `{ key, description?, defaultValue?, projectId? }`. Omit `projectId` for a workspace-level definition (visible to every project); set it for a project-level one. Key: `^[A-Za-z_][A-Za-z0-9_]*$`, max 64 chars, **workspace-unique and immutable**. |
+| `updateContextParameter` | `id, input: UpdateContextParameterInput!` | `{ description?, defaultValue? }`; pass `defaultValue: null` to remove the default. Changing a default affects every run that does not override the key - **confirm first**. |
+| `setContextParameterValue` | `input: SetContextParameterValueInput!` | `{ parameterId, scope, scopeId, value }` creates or replaces one entity's override. `scope`: `PROJECT` \| `REPOSITORY` \| `WORKFLOW` \| `ORCHESTRATION` \| `AGENT`; `scopeId` = that entity's id. Value max 16KB. Configuration, not definition: **no commit needed**, applies to the next run. |
+| `deleteContextParameterValue` | `input: DeleteContextParameterValueInput!` | `{ parameterId, scope, scopeId }` removes one override so the entity inherits again. Returns Boolean. |
+| `promoteContextParameterToWorkspace` | `id` | project-level definition -> workspace-level; existing overrides are kept |
+| `deleteContextParameter` | `id` | deletes the definition **and every override**. Workflows/agents still referencing the key fail on their next commit / save. Confirm, and check `overrideCount` first. |
+
+```graphql
+# Define once, override where it differs
+mutation {
+  createContextParameter(input: { key: "base_branch", description: "Branch PRs target", defaultValue: "main" }) { id key }
+}
+mutation ($paramId: String!, $rid: String!) {
+  setContextParameterValue(input: { parameterId: $paramId, scope: REPOSITORY, scopeId: $rid, value: "develop" }) {
+    id scope scopeId scopeName value
+  }
+}
+```
+
+Which scope to use: `PROJECT` for a team-wide value, `REPOSITORY` for one repo, `WORKFLOW` for that workflow's standalone default, `ORCHESTRATION` to hand a value to every workflow the orchestration routes (beats the workflow's own), `AGENT` for a value only that agent's steps should see. Read the current state with `contextParameterEffectiveValues` before changing an override that production runs already use.
+
+---
+
+## Workspace library
+
+| Mutation | Args | Notes |
+|---|---|---|
+| `promoteProjectSecretToLibrary` | `id` | value stays encrypted; a project secret with the same name overrides the library value in that project |
+| `promoteMcpServerToLibrary` | `id` | its linked secrets must already be library secrets |
+| `promoteSkillToLibrary` | `id` | |
+| `promoteAgentToLibrary` | `id` | its MCP servers, skills and secrets must already be library items; the error names any that are not |
+| `installLibraryWorkflow` | `libraryWorkflowId, targetProjectId, name?, agentMapping?: [{ from, to }]` | copies the template's **last committed version** into `targetProjectId` as a new draft (refused when never committed). Map every project-owned agent id from `exportWorkflow(..., committed: true).refs.agents`; library agents need no mapping. |
+| `installLibraryOrchestration` | `libraryOrchestrationId, targetProjectId, name?, workflowMapping?: [{ from, to }]` | same, for orchestration templates; every id in `exportOrchestration(...).refs.workflows` must map to a workflow of the target project (install the template's workflows first and map to the copies) |
+
+Rules the server enforces (so you can explain the error instead of retrying):
+- All of these need the workspace-level `library.edit` permission.
+- `targetProjectId` must be a **standard** project - never the library itself.
+- Promote dependencies bottom-up: secret -> MCP server -> agent. A library item can only link library items.
+- Deleting a library item that other projects still reference is refused with the usage list.
+- Creating an item *directly* in the library needs no special mutation: pass the `libraryProject` id as the `projectId` on `createMcpServer` / `createProjectSecret` / `createSkill` / `createAgent` / `createWorkflow` / `createOrchestration`. A library secret with `availableForAllExecutions: true` ships with every run in every project - confirm before setting it.
+- Templates that reference `{{params.<key>}}` must use **workspace-level** parameter definitions; a project-level one is invisible to the installing project and the copy fails to commit there.
+
+Always confirm with the user before promoting: the item moves out of the project (same id, so existing references keep resolving) and becomes governed by library permissions.
 
 ---
 

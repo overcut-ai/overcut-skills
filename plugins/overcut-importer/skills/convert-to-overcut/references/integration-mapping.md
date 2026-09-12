@@ -72,6 +72,18 @@ Either way the agent stays importable: built-in tools work immediately; MCP reco
 
 Every secret is referenced by **name** in `secrets[]` and created by the user later (`createProjectSecret` takes a value once, only if the user supplies it). Never read, echo, copy, or invent a secret value - even if the source file hardcodes one. If a source file contains a hardcoded credential, **do not carry it into the output**; instead add a TODO: *"Source hardcoded a credential for `<tool>` - create it as a project secret `<NAME>` and rotate the leaked value."*
 
+## Configuration values are not secrets - and not instruction text either
+
+Source configs mix three kinds of values. Sort each one:
+
+| Value | Overcut home | Example |
+|---|---|---|
+| a credential (token, key, password, connection string with a password) | `secrets[]` by name | `GITHUB_TOKEN`, `DATABASE_URL` |
+| plain configuration that differs per team / repo / environment | `{{params.<key>}}` + `contextParameters` entry (`target-formats.md`) | `base_branch`, `jira_project_key`, `alert_channel`, `coverage_threshold` |
+| a constant that is the same everywhere | plain text in the `instruction` | "post findings as a PR comment" |
+
+An env var is not automatically a secret: `TARGET_BRANCH=main` is a parameter, `SLACK_BOT_TOKEN` is a secret. When unsure whether a value is sensitive, treat it as a secret and add a TODO - never the other way round, because parameter values appear in rendered prompts and run logs.
+
 ## `availableTools` vs MCP - the classic mixup
 
 `availableTools` holds **built-in** tool identifiers from the [Agent Tools Reference](https://docs.overcut.ai/docs/reference/tools) (e.g. `read_file`, `run_terminal_cmd`, `create_pull_request`). It is **not** where MCP tools go. MCP tools arrive via an assigned MCP server and its `allowedTools`, and only for providers the built-in tools don't cover. Never put a bare provider name (`slack`, `github`, `git`, `filesystem`) into `availableTools` - those are not tool names.

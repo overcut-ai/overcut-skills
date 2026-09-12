@@ -23,7 +23,7 @@ query ($id: String!) {
 - **`triggers`** - an array (logical OR); at least one is required. See triggers below.
 - Workflow-level knobs: `priority` (1-100, lower runs first), `timeoutMs`, `statusUpdateMethod` (`comment` / `reuse_comment` / `static_comment`), `defaultModelKey`.
 
-## The four step action types
+## The step action types
 
 | `action` | What it does |
 |---|---|
@@ -31,10 +31,23 @@ query ($id: String!) {
 | `repo.identify` | Resolve *which* repo to clone from the trigger context (used before `git.clone` when the repo isn't fixed). |
 | `agent.run` | Run one agent for a short, deterministic, one-shot task (extract data, post a comment, produce a result the next step consumes). |
 | `agent.session` | Run a built-in **coordinator** plus one or more sub-agents for a multi-turn / iterative task. The coordinator is automatic; the step's `params` reference the sub-agent ids. |
+| `script.run` | Run inline bash deterministically with no agent: `params.script` (fixed text), optional `cwd`, `env` (values may use `{{expressions}}`), `timeoutSeconds`. Structured output is JSON the script writes to `$OC_OUTPUT_FILE`. |
 
 Reading rules that explain otherwise-confusing definitions:
 - `git.clone` / `repo.identify` are **step actions**, not agent tools. An agent step can only touch code if a `git.clone` step ran before it. So a code-modifying workflow almost always looks like `repo.identify?` -> `git.clone` -> `agent.*`.
 - An `agent.run` step has a single implicit execution thread; an `agent.session` step fans out into sub-agent threads (relevant when debugging runs - see `debugging-runs.md`).
+
+## Template expressions
+
+Step `instruction` strings and string `params` are Handlebars templates rendered at dispatch time. Three namespaces appear in definitions:
+
+| Expression | Resolves to |
+|---|---|
+| `{{trigger.<path>}}` | the normalized trigger event, e.g. `{{trigger.pullRequest.headBranch}}`, `{{trigger.repository.fullName}}` |
+| `{{outputs.<stepId>.<path>}}` | a previous step's output (an agent's plain-text reply is `{{outputs.<stepId>.message}}`; a `script.run` step's JSON is under `.output.<field>`) |
+| `{{params.<key>}}` | a **context parameter** resolved for this run (see `concepts.md`) - the most specific value on the path `workspace default < project < repository < workflow < orchestration < agent`. Also valid in agent `additionalInstructions`. `script.run` steps additionally get every referenced key as the env var `OC_PARAM_<KEY>` (upper case). |
+
+`{{{ }}}` (triple braces) disables HTML escaping - use it when passing agent prose or code between steps. Every `{{params.<key>}}` must name a defined parameter: `commitWorkflow` rejects unknown keys, and a run whose key has no value on its path fails at preparation with `statusReason: ContextParameterUnresolved`. Preview with `contextParameterResolutionPreview` (`queries.md`) before committing.
 
 ## Triggers
 

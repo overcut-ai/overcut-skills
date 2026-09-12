@@ -94,6 +94,8 @@ Using `references/target-formats.md` and `references/source-frameworks.md`:
 
 **Integrations** (external tool calls): best-effort auto-map to Overcut built-in tools or a known MCP catalog entry per `references/integration-mapping.md`. When you can map with confidence, wire it in. When you cannot, do **not** fabricate config - record it as a TODO in the `MANIFEST.md`.
 
+**Configuration that varies** (a target branch, reviewer list, ticket project key, channel, threshold - anything a second team, repo, or environment would set differently): do not hardcode it into an instruction and do not emit one workflow per variant. Reference it as `{{params.<key>}}` and declare the key in the artifact's context parameter list (`refs.contextParameters` on a workflow, `contextParameters` on an agent), with the source's value as `default` when there was one. Overcut resolves it per run by scope. Credentials are never parameters - they stay `secrets[]`. See `references/target-formats.md` "Context parameters" and the sorting table in `references/integration-mapping.md`.
+
 **Required-but-missing fields**: emit valid **placeholders** and flag each one as a TODO. Never silently guess. Standard placeholders (full table in `references/target-formats.md`):
 - `baseAgentType`: `Custom` unless the role name clearly implies another enum value.
 - agent `modelKey`: `"<workspace-default>"` in the artifact; it must be swapped for a real key from `llmModels` at import time (the API requires a non-blank key). Workflow `defaultModelKey`: omit it.
@@ -117,17 +119,18 @@ Run the checker before declaring done:
 scripts/validate-output.sh <out-dir>
 ```
 
-It verifies JSON parses, every `SKILL.md` has valid frontmatter (`name`, `description`), agents carry the required fields with a legal `baseAgentType`, and each workflow is a valid import artifact: legal `action` values with the right `params` (`agentId` / `agentIds` + `goal` / `repoFullName` / `script`), required `name` and `instruction`, a linear `flow` starting from `""`, legal trigger events with the blocks they require (`slashCommand` on `manual`, `schedule` on `scheduled`, `customEvent` on `custom_event`), and `refs.agents` that resolve to agent files. Fix anything it flags.
+It verifies JSON parses, every `SKILL.md` has valid frontmatter (`name`, `description`), agents carry the required fields with a legal `baseAgentType`, and each workflow is a valid import artifact: legal `action` values with the right `params` (`agentId` / `agentIds` + `goal` / `repoFullName` / `script`), required `name` and `instruction`, a linear `flow` starting from `""`, legal trigger events with the blocks they require (`slashCommand` on `manual`, `schedule` on `scheduled`, `customEvent` on `custom_event`), `refs.agents` that resolve to agent files, and every `{{params.<key>}}` an artifact references declared in its context parameter list with a well-formed, non-credential key. Fix anything it flags.
 
 ### 6. Review, then optionally import
 
 Summarize for the user: what was produced, the mapping at a glance, and the open TODOs. Do **not** import automatically.
 
-If the user then wants to push it into a live Overcut project, hand off to the **`overcut-api` skill** (in the sibling `overcut` plugin - it must be installed). Because Overcut Skills load from a **git repo** (`createSkill` points at a repository + `path` + `ref`), the import order is:
+If the user then wants to push it into a live Overcut project, hand off to the **`overcut-api` skill** (in the sibling `overcut` plugin - it must be installed). Because Overcut Skills load from a **git repo** (`createSkill` points at a repository + `path` + `ref`) and because `createAgent` and `commitWorkflow` validate `{{params.*}}` keys, the import order is:
 
-1. Commit the `out/skills/` folders into a repo connected to the project. `browseSkillsInRepo` shows what Overcut discovers; then `createSkill` (or `createSkills`) per folder with `repositoryId`, `slug` (the folder name), `path`, `ref`, `name`, `description`.
-2. Resolve each agent's `modelKey` from `llmModels`, then `createAgent` per `*.agent.json` passing `skillIds` (and `mcpServerIds` once the servers exist); `setAgentSecrets` for its secrets.
-3. `importWorkflow(file: <the .workflow.json>, name, projectId, agentMapping: [{ from: <refs.agents[].id placeholder>, to: <created agent id> }])` per `*.workflow.json`. This creates the workflow as a **draft** - the user commits it live via `commitWorkflow` after reviewing in the UI.
+1. `createContextParameter` for every key in the manifest's "Context parameters to define" (dedupe across artifacts; keys are workspace-unique, so reuse an existing key with the same meaning instead of creating a near-duplicate). Where the source had different values per team/repo, `setContextParameterValue` at that scope.
+2. Commit the `out/skills/` folders into a repo connected to the project. `browseSkillsInRepo` shows what Overcut discovers; then `createSkill` (or `createSkills`) per folder with `repositoryId`, `slug` (the folder name), `path`, `ref`, `name`, `description`.
+3. Resolve each agent's `modelKey` from `llmModels`, then `createAgent` per `*.agent.json` passing `skillIds` (and `mcpServerIds` once the servers exist); `setAgentSecrets` for its secrets. `createAgent` rejects an `additionalInstructions` that references an undefined key - step 1 must be done.
+4. `importWorkflow(file: <the .workflow.json>, name, projectId, agentMapping: [{ from: <refs.agents[].id placeholder>, to: <created agent id> }])` per `*.workflow.json`. This creates the workflow as a **draft** - run `contextParameterResolutionPreview(workflowId, useWorkingDraft: true)` to confirm every key resolves, then the user commits it live via `commitWorkflow` after reviewing in the UI.
 
 Never create secret values, `commitWorkflow`, or trigger runs without explicit user confirmation - the safety rules in the `overcut-api` skill's `references/mutations.md` apply.
 

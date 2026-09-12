@@ -29,7 +29,8 @@ Two structural facts about the target shape every mapping below relies on (detai
 | `CronWorkflow.spec.schedule` | a `scheduled` trigger: `schedule: { cronExpression }` (max one per workflow) |
 | task that reacts to a webhook/sensor (Argo Events) | matching Overcut trigger (`custom_event` with `customEvent.name`, or a PR/issue event) |
 | `template.container/script/resource`, `image`, `args` | **drop** - keep the `command`/script body only when it becomes a `script.run`, otherwise keep the human intent |
-| `retryStrategy`, `parallelism`, `podGC`, `activeDeadlineSeconds`, `volumes`, `nodeSelector`, `serviceAccountName`, `arguments.parameters` plumbing | **drop** (Overcut owns execution). Turn genuinely business parameters into instruction text. A task that clearly needed a big box → `machineTierKey: "large"` on the definition. |
+| `retryStrategy`, `parallelism`, `podGC`, `activeDeadlineSeconds`, `volumes`, `nodeSelector`, `serviceAccountName` | **drop** (Overcut owns execution). A task that clearly needed a big box → `machineTierKey: "large"` on the definition. |
+| `arguments.parameters` / `inputs.parameters` | plumbing (image tags, paths) → **drop**. A parameter that encodes a business value varying per team/env/repo (target branch, reviewer list, project key, threshold) → `{{params.<key>}}` + a `refs.contextParameters` entry; a value that is the same everywhere → plain instruction text. |
 
 The distillation is the point: an Argo task is usually a container running a script. If the script is deterministic, carry it as a `script.run`. If it needed a person's judgment, you want the *sentence* describing what it accomplishes for the SDLC, expressed as an agent `instruction` - not the image or command.
 
@@ -127,6 +128,7 @@ Reusable checklists embedded in a backstory/goal (e.g. "always verify X, Y, Z") 
 | other integration nodes (HTTP Request, Postgres, Notion, ...) | `mcpServers[]` + `secrets[]` per `integration-mapping.md` |
 | `Set`/`Function`/`Merge` glue nodes | usually **drop** |
 | an `IF`/`Switch` node | no conditional edges exist. If it tests trigger data (label, branch, author) → a trigger `conditions` group (often separate workflows per branch); if it tests an earlier node's output → state the rule in the downstream agent's `instruction` |
+| a `Set` node or node parameter holding a per-environment constant (channel name, project key, branch, threshold) | `{{params.<key>}}` + `refs.contextParameters` entry |
 | n8n credentials | `secrets[]` by **name** (never values) - or nothing at all when the provider is a built-in tool (the project's connection covers it) |
 
 ---
@@ -152,6 +154,7 @@ Reusable checklists embedded in a backstory/goal (e.g. "always verify X, Y, Z") 
 | build/test/lint/deploy/cache/setup steps | **drop** unless the *decision logic* in them is the point; a build the agent must run itself → give the agent `run_terminal_cmd`, or a bigger `machineTierKey` |
 | `uses: <owner>/<action>` that triggers another pipeline | `ci.executeWorkflow` |
 | `secrets.*` used by a kept step | `secrets[]` by name |
+| `vars.*`, `env:` constants, `workflow_dispatch.inputs` / `workflow_call.inputs` used by a kept step | `{{params.<key>}}` + `refs.contextParameters` entry (the input `default` becomes the parameter `default`). Never a credential. |
 
 ---
 
@@ -176,3 +179,5 @@ When no recognizer matches, do not force a mapping. Read the file and ask three 
 3. **Is it an ordered pipeline** (do A, then B, then C; a DAG; a state machine)? → **Workflow(s)** - decompose it into dedicated per-goal workflows (`steps` + `flow`) rather than one 1:1 port, each modeled on the nearest playbook, with each meaningful stage an `agent.run`/`agent.session` and each dependency an edge.
 
 Anything that is purely infrastructure, packaging, or framework wiring → **drop**, and list it under "Dropped as plumbing" in the manifest so the user can confirm nothing important was lost.
+
+Across every framework, apply one more test to each constant you keep: **would a second team, repository, or environment want a different value?** If yes (branch names, reviewer lists, ticket project keys, Slack channels, naming conventions, thresholds), reference it as `{{params.<key>}}` and declare it in the artifact's context parameter list (`refs.contextParameters` / `contextParameters`) instead of baking it into the instruction - see `target-formats.md` "Context parameters". If it is a credential, it is a secret, never a parameter.
