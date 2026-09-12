@@ -22,8 +22,8 @@ Naming: kebab-case throughout, matching the `name` inside each artifact. Cross-r
 ## What goes in each file
 
 - `skills/<name>/SKILL.md` - Skill format from `target-formats.md` §1. Frontmatter `name` + `description` required (`license` optional; nothing else is read). Body preserved from the source.
-- `agents/<name>.agent.json` - Agent spec from `target-formats.md` §2. Required: `name`, `description`, `baseAgentType`, `additionalInstructions`, `modelKey` (placeholder allowed). Links (`skills`/`mcpServers`/`secrets`) by name.
-- `workflows/<name>.workflow.json` - the `importWorkflow` artifact from `target-formats.md` §3: `{ _formatVersion: "1.0.0", workflow: { name, definition }, refs: { agents } }`. Steps use only the legal actions with the right `params`; `flow` is a linear chain from `""`; every step agent id appears in `refs.agents`.
+- `agents/<name>.agent.json` - Agent spec from `target-formats.md` §2. Required: `name`, `description`, `baseAgentType`, `additionalInstructions`, `modelKey` (placeholder allowed). Links (`skills`/`mcpServers`/`secrets`/`contextParameters`) by name.
+- `workflows/<name>.workflow.json` - the `importWorkflow` artifact from `target-formats.md` §3: `{ _formatVersion: "1.0.0", workflow: { name, definition }, refs: { agents } }`. Steps use only the legal actions with the right `params`; `flow` is a linear chain from `""`; every step agent id appears in `refs.agents`; every `{{params.<key>}}` in the definition is declared in `refs.contextParameters`.
 
 Use the templates in `assets/templates/` as the starting point for each.
 
@@ -56,10 +56,11 @@ The action list, grouped. Every placeholder and every low-confidence decision la
 - **Integrations to wire** - per agent: built-in provider tools to confirm (PRs/tickets/channels need the provider connected to the project), and any MCP server + secret to assign (from `integration-mapping.md`), including low-confidence ones the converter refused to guess.
 - **Built-in tools for code agents** - any filesystem/terminal `availableTools` (`read_file`, `edit_file`, `run_terminal_cmd`, ...) the converter added because the agent runs after a `git.clone`; the reviewer confirms them.
 - **Secrets to create** - by name, never value. Flag any hardcoded credential found in the source (to create + rotate).
+- **Context parameters to define** - every distinct `key` across all artifacts' context parameter lists, with its description, the default carried from the source (or "no default - set per project/repository"), and which artifacts reference it. Recommend workspace-level unless the key is clearly specific to one project.
 - **Trigger conditions to narrow** - every trigger whose source filter could not be expressed as a rule group and was therefore omitted.
 
 ### 5. Import steps
-The exact ordered steps to push this into a live project via the `overcut-api` skill (Skills -> Agents -> Workflows; `importWorkflow` with `agentMapping`; draft vs commit caveat). Mirror SKILL.md §6.
+The exact ordered steps to push this into a live project via the `overcut-api` skill (Context parameters -> Skills -> Agents -> Workflows; `importWorkflow` with `agentMapping`; draft vs commit caveat). Parameters go first because `createAgent` and `commitWorkflow` reject undefined keys. Mirror SKILL.md §6.
 
 ## Idempotence
 

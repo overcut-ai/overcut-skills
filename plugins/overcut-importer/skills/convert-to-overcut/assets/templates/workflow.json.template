@@ -39,6 +39,7 @@
   "refs": {
     "agents": [
       { "id": "<agent-name>-agent-id", "name": "<agent-name>" }
-    ]
+    ],
+    "contextParameters": []
   }
 }
